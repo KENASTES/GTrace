@@ -7,6 +7,12 @@
         mc:Ignorable="d"
         Title="MainWindow" Height="450" Width="800">
     <Grid>
-
-    </Grid>
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+        <TextBlock Text="Gtrace: Gerber to G-Code Converter" FontSize="22" FontWeight="Bold" Margin="0,0,0,20" HorizontalAlignment="Center"/>
+        
+        <Button Name="SelectFileBtn" Content="เลือกไฟล์ Gerber" Width="200" Height="40" FontSize="16" Click="SelectFileBtn_Click" Margin="0,0,0,15"/>
+        
+        <TextBlock Name="StatusText" Text="สถานะ: รอรับไฟล์..." FontSize="14" Foreground="Gray" HorizontalAlignment="Center"/>
+    </StackPanel>
+</Grid>
 </Window>
