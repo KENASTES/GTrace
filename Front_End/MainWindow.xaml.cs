@@ -10,75 +10,76 @@ using System.Windows.Media.Imaging;
 using System.Windows.Navigation;
 using System.Windows.Shapes;
 using System.Runtime.InteropServices;
+using Microsoft.Win32;
 
 namespace Front_End
 {
-
     public partial class MainWindow : Window
     {
-        [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl)]
+        [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+        public static extern int process_gerber_to_gcode(string path_ptr);
 
-        public static extern int process_garber_to_gcode(String garber_path);
-
-        private string garber_selected_file_path = "";
+        private string selectedFilePath = "";
 
         public MainWindow()
         {
             InitializeComponent();
-
-            Generate_Button.Click += Generate_Button_Click;
+            
+            GenerateButton.Click += GenerateButtonClick;
         }
 
-        private void Log_To_Console(string message)
+        private void LogToConsole(string message)
         {
-            Console_TextBox.AppendText(message + Environment.NewLine);
-            Console_TextBox.ScrollToEnd();
+            ConsoleLog.AppendText($"\n> {message}");
+            ConsoleLog.ScrollToEnd();
         }
 
-        private void Select_File_Button_Click(object sender, RoutedEventArgs e)
+        private void SelectFileButtonClick(object sender, RoutedEventArgs e)
         {
-            Open_File_Dialog open_File_Dialog = new Open_File_Dialog();
+            OpenFileDialog openFileDialog = new OpenFileDialog();
+            openFileDialog.Filter = "Gerber Files (*.grb;*.gbr)|*.grb;*.gbr|All files (*.*)|*.*";
 
-            open_File_Dialog.Filter = "Gerber Files (*.grb;*.gbr)|*.grb;*.gbr|All files (*.*)|*.*";
-
-            if (open_File_Dialog.Show_Dialog() == true)
+            if (openFileDialog.ShowDialog() == true)
             {
-                garber_selected_file_path = open_File_Dialog.FileName;
-
-                File_Path_TextBox.Text = garber_selected_file_path;
-                Log_To_Console("Selected file: " + garber_selected_file_path);
+                selectedFilePath = openFileDialog.FileName;
+                
+                SelectedFileText.Text = selectedFilePath;
+                LogToConsole($"File selected: {selectedFilePath}");
             }
         }
 
-        private void Generate_Button_Click(object sender, RoutedEventArgs e)
+        private void GenerateButtonClick(object sender, RoutedEventArgs e)
         {
-            if (String.IsNullOrEmpty(garber_selected_file_path))
+            if (string.IsNullOrEmpty(selectedFilePath))
             {
-                Log_To_Console("Please select a Gerber file before generating G-code.");
+                MessageBox.Show("กรุณาเลือกไฟล์ Gerber ก่อนครับ!", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
-            string Feed_Rate_Setting_Dislay = Feed_Rate_Input.Text;
-            string Laser_Power_Setting_Display = Laser_Pwoer_Input.Text;
+            string feedRate = FeedRateInput.Text;
+            string laserPower = LaserPowerInput.Text; 
+
+            LogToConsole("----------------------------------");
+            LogToConsole("Starting G-Code generation...");
+            LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Laser Power: {laserPower}");
 
             try
             {
-                int Result = process_garber_to_gcode(garber_selected_file_path);
+                int result = process_gerber_to_gcode(selectedFilePath);
 
-                if (Result == 0)
+                if (result == 1)
                 {
-                    Log_To_Console("G-code generation successful!");
+                    LogToConsole("SUCCESS: Gerber processed successfully.");
                 }
                 else
                 {
-                    Log_To_Console("G-code generation failed with error code: " + Result);
+                    LogToConsole($"ERROR: Core Engine returned code {result}");
                 }
             }
             catch (Exception ex)
             {
-                Log_To_Console("An error occurred during G-code generation: " + ex.Message);
+                LogToConsole($"EXCEPTION: DLL ไม่พร้อมทำงาน หรือเกิดข้อผิดพลาด -> {ex.Message}");
             }
         }
     }
-
 }
