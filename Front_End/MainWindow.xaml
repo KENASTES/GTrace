@@ -49,7 +49,7 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Feed Rate (mm/min):"
                                                 VerticalAlignment="Center"/>
-                                <TextBox Name="FeedRateInput"
+                                <TextBox Name="Feed_Rate_Input"
                                                 Grid.Column="1"
                                                 Text="800"
                                                 Height="25"
@@ -64,7 +64,7 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Laser Power (PWM):"
                                                 VerticalAlignment="Center"/>
-                                <TextBox Name="PowerInput"
+                                <TextBox Name="Laser_Power_Input"
                                                 Grid.Column="1"
                                                 Text="255"
                                                 Height="25"
@@ -72,7 +72,7 @@
                                                 Padding="5,0"/>
                         </Grid>
 
-                        <Button Name="GenerateBtn"
+                        <Button Name="Generate_Button"
                                         Content="GENERATE G-CODE"
                                         Height="45"
                                         Background="#007ACC"
