@@ -52,7 +52,7 @@ namespace Front_End
         {
             if (string.IsNullOrEmpty(selectedFilePath))
             {
-                MessageBox.Show("กรุณาเลือกไฟล์ Gerber ก่อนครับ!", "Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+                LogToConsole("ERROR: No file selected to converrt. Please select a Gerber file first.");
                 return;
             }
 
