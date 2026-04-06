@@ -17,7 +17,7 @@ namespace Front_End
     public partial class MainWindow : Window
     {
         [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        public static extern int process_gerber_to_gcode(string path_ptr);
+        public static extern int process_gerber_to_gcode(string path_ptr, int feed_rate, int laser_power);
 
         private string selectedFilePath = "";
 
@@ -37,7 +37,7 @@ namespace Front_End
         private void SelectFileButtonClick(object sender, RoutedEventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog();
-            openFileDialog.Filter = "Gerber Files (*.grb;*.gbr)|*.grb;*.gbr|All files (*.*)|*.*";
+            openFileDialog.Filter = "All files (*.*)|*.*";
 
             if (openFileDialog.ShowDialog() == true)
             {
@@ -56,8 +56,8 @@ namespace Front_End
                 return;
             }
 
-            string feedRate = FeedRateInput.Text;
-            string laserPower = LaserPowerInput.Text; 
+            int feedRate = 800;
+            int laserPower = 205;
 
             LogToConsole("----------------------------------");
             LogToConsole("Starting G-Code generation...");
@@ -65,7 +65,7 @@ namespace Front_End
 
             try
             {
-                int result = process_gerber_to_gcode(selectedFilePath);
+                int result = process_gerber_to_gcode(selectedFilePath, feedRate, laserPower);
 
                 if (result == 1)
                 {
