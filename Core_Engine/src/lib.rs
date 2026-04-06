@@ -1,4 +1,6 @@
 use std::ffi::CStr;
+use std::fs::File;
+use std::io::{self, BufRead};
 use std::os::raw::c_char;
 
 #[unsafe(no_mangle)]
@@ -14,15 +16,35 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char) -> i32 {
         Err(_) => return -2, 
     };
 
-    println!("Gtrace Core: Computing File - {}", file_path);
+    println!("Gtrace Core : Computing File - {}", file_path);
     
-    let operate_success = true; 
+    let file = match File::open(file_path){
+        Ok(f) => f,
+        Err(_e) => {
+            println!("Gtrace Core : Failed to open file - {}", file_path);
+            return -3;
+        } 
+    };
 
-    if operate_success {
-        1
-    } else {
-        0
+    let reader = io::BufReader::new(file);
+
+    println!("Start to read file line by line :");
+
+    for (index, line) in reader.lines().enumerate() {
+        let line_content = match line {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+
+        if index < 10 {
+            println!("Line {}: {}", index + 1, line_content);
+        }
+
     }
+
+    println!("Gtrace Core: Finished processing file - {}", file_path);
+
+    1
 }
 
 #[unsafe(no_mangle)]
