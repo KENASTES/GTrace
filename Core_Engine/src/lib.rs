@@ -2,6 +2,7 @@ use std::ffi::CStr;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::os::raw::c_char;
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct CncState {
@@ -10,6 +11,8 @@ pub struct CncState {
     pub is_laser_on: bool,
     pub format_decimals: u8,
     pub scale_factor: f64,
+    pub apertures: HashMap<i32, f64>,
+    pub current_aperture: i32
 }
 
 impl CncState {
@@ -20,12 +23,13 @@ impl CncState {
             is_laser_on: false,
             format_decimals: 6,
             scale_factor: 1_000_000.0,
+            apertures: HashMap::new(),
+            current_aperture: 0,
         }
     }
 
     pub fn parse_coordinate(&self, raw_val: f64) -> f64 {
-    raw_val / self.scale_factor
-
+        raw_val / self.scale_factor
     }
 }
 
@@ -107,6 +111,20 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
             continue;
         }
 
+        if line.starts_with("%ADD") {
+            if let Some(c_idx) = line.find("C"){
+                if let Ok(d_code) = line[4..c_idx].parse::<i32>() {
+                    if let Some(comma_idx) = line.find(','){
+                        let star_idx = line.find('*').unwrap_or(line.len());
+                        if let Ok(size) = line[comma_idx + 1..star_idx].parse::<f64>() {
+                            state.apertures.insert(d_code, size);
+                            println!("Defined aperture D{} with size {}", d_code, size);
+                        }
+                    }
+                }
+            }
+        }
+
         if !line.starts_with('%') {
             if let Some(raw_x) = extract_coordinates(line, 'X') {
                 state.current_x = state.parse_coordinate(raw_x);
@@ -117,7 +135,13 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
 
             if let Some(d_code) = extract_coordinates(line, 'D') {
                 let d_code = d_code as i32;
-                if d_code == 2 {
+                
+                if d_code >= 10 {
+                    state.current_aperture = d_code;
+                    if let Some(size) = state.apertures.get(&d_code) {
+                        println!("Selected aperture D{} with size {}", d_code, size);
+                    }
+                } else if d_code >= 2 {
                     state.is_laser_on = false;
                     writeln!(out_file, "G0 X{:.4} Y{:.4} S0", state.current_x, state.current_y).unwrap();
                 } else if d_code == 1 {
