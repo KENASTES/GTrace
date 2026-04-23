@@ -4,6 +4,15 @@ use std::io::{self, BufRead, Write};
 use std::os::raw::c_char;
 use std::collections::HashMap;
 
+#[Derive(Debug)]
+pub struct LineSegment {
+    pub start_x: f64,
+    pub start_y: f64,
+    pub end_x: f64,
+    pub end_y: f64,
+    pub thickness: f64
+}
+
 #[derive(Debug)]
 pub struct CncState {
     pub current_x: f64,
@@ -12,7 +21,8 @@ pub struct CncState {
     pub format_decimals: u8,
     pub scale_factor: f64,
     pub apertures: HashMap<i32, f64>,
-    pub current_aperture: i32
+    pub current_aperture: i32,
+    pub segments: Vec<LineSegment>
 }
 
 impl CncState {
@@ -25,11 +35,16 @@ impl CncState {
             scale_factor: 1_000_000.0,
             apertures: HashMap::new(),
             current_aperture: 0,
+            segments: Vec::new()
         }
     }
 
     pub fn parse_coordinate(&self, raw_val: f64) -> f64 {
         raw_val / self.scale_factor
+    }
+
+    pub fn current_thickeness(&self) -> f64 {
+        *self.apertures.get(&self.current_aperture).unwrap_or(&0.1)
     }
 }
 
