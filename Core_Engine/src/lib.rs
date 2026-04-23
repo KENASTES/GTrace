@@ -138,9 +138,14 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
                     }
                 }
             }
+            continue;
         }
 
         if !line.starts_with('%') {
+
+            let old_x = state.current_x;
+            let old_y = state.current_y;
+
             if let Some(raw_x) = extract_coordinates(line, 'X') {
                 state.current_x = state.parse_coordinate(raw_x);
             }
@@ -158,13 +163,24 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
                     }
                 } else if d_code >= 2 {
                     state.is_laser_on = false;
-                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", state.current_x, state.current_y).unwrap();
+
                 } else if d_code == 1 {
                     state.is_laser_on = true;
-                    writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", state.current_x, state.current_y, laser_power).unwrap(); 
+                    state.segments.push(LineSegment {
+                        start_x: old_x,
+                        start_y: old_y,
+                        end_x: state.current_x,
+                        end_y: state.current_y,
+                        thickness: state.current_thickeness()
+                    });
                 } else if d_code == 3 {
-                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", state.current_x, state.current_y).unwrap();
-                    writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", state.current_x, state.current_y, laser_power).unwrap(); 
+                    state.segments.push(LineSegment {
+                        start_x: state.current_x,
+                        start_y: state.current_y,
+                        end_x: state.current_x,
+                        end_y: state.current_y,
+                        thickness: state.current_thickeness()
+                    })
                 }
             }
         }
@@ -174,6 +190,7 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
     writeln!(out_file, "M2 ; End of program").unwrap();
 
     println!("Gtrace Core: Finished processing file - {}", file_path);
+    println!("Finished Store the trace data {} line", state.segments.len());
 
     1
 }
