@@ -3,14 +3,65 @@ use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::os::raw::c_char;
 use std::collections::HashMap;
+use geo::{coord, LineString, Polygon, MutiPolygon};
+use geo_booleanop::boolean::BooleanOp;
 
-#[Derive(Debug)]
+#[derive(Debug)]
 pub struct LineSegment {
     pub start_x: f64,
     pub start_y: f64,
     pub end_x: f64,
     pub end_y: f64,
     pub thickness: f64
+}
+
+fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
+    let dx = segment.end_x - segment.start_x;
+    let dy = segment.end_y - segment.start_y;
+    let length = (dx * dx + dy * dy).sqrt();
+
+    if length == 0.0 {
+        let radius = segment.thickness / 2.0;
+        let mut points = vec![];
+        let sides = 8;
+
+        for i in 0..sides {
+            let angle = 2.0 * std::f64::consts::PI * (i as f64) / (sides as f64);
+            points.push(coord! {
+                x: segment.start_x + radius * angle.cos(),
+                y: segment.start_y + radius * angle.sin()
+            });
+        }
+        points.push(points[0]);
+        
+        return Polygon::new(LineString::new(points), vec![]);
+    }
+
+    let nx = -dy / length;
+    let ny = dx / length;
+    let half_t = segment.thickness / 2.0;
+
+    let p1 = coord! {
+        x: segment.start_x + nx * half_t,
+        y: segment.start_y + ny * half_t
+    };
+
+    let p2 = coord! {
+        x: segment.start_x - nx * half_t,
+        y: segment.start_y - ny * half_t
+    };
+
+    let p3 = coord! {
+        x: segment.end_x - nx * half_t,
+        y: segment.end_y - ny * half_t
+    };
+
+    let p4 = coord! {
+        x: segment.end_x + nx * half_t,
+        y: segment.end_y + ny * half_t
+    };
+
+    Polygon::new(LineString::new(vec![p1, p2, p3, p4, p1]), vec![])
 }
 
 #[derive(Debug)]
@@ -59,7 +110,7 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i32, laser_power: i32) -> i32 {
+pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i32, _laser_power: i32) -> i32 {
     if path_ptr.is_null() {
         return -1; 
     }
@@ -186,9 +237,15 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
         }
     }
 
-    writeln!(out_file, "M5 ; Turn off laser").unwrap();
-    writeln!(out_file, "M2 ; End of program").unwrap();
+    println!("Generating Polygon data from line segments...");
 
+    let mut polygons: Vec<Polygon<f64>> = Vec::new();
+
+    for segement in &state.segments {
+        polygons.push(line_to_polygon(segement));
+    }
+    
+    println!("Converted Line Segments into Polygons: {}", polygons.len());
     println!("Gtrace Core: Finished processing file - {}", file_path);
     println!("Finished Store the trace data {} line", state.segments.len());
 
