@@ -110,7 +110,7 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i32, _laser_power: i32) -> i32 {
+pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i32, laser_power: i32) -> i32 {
     if path_ptr.is_null() {
         return -1; 
     }
@@ -257,6 +257,34 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
     }
 
     println!("Polygon Merged complete. Total merged polygons: {}", merged_area.0.len());
+    println!("Start to generate Gcode from the merged polygons...");
+
+    for (i, poly) in merged_area.iter().enumerate() {
+        writeln!(out_file, "; Polygon {}", i + 1).unwrap();
+
+        let exterior = poly.exterior();
+        for (pt_idx, coordinates) in exterior.coords().enumerate() {
+            if pt_idx == 0 {
+                writeln!(out_file, "G0 X{:.4} Y{:.4} S0", coordinates.x, coordinates.y).unwrap();
+            } else {
+                writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", coordinates.x, coordinates.y, laser_power).unwrap();
+            }
+        }
+
+        for interior in poly.interiors() {
+            writeln!(out_file, "; Clear the hole").unwrap();
+            for (pt_idx, coordinates) in interior.coords().enumerate() {
+                if pt_idx == 0 {
+                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", coordinates.x, coordinates.y).unwrap();
+                } else {
+                    writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", coordinates.x, coordinates.y, laser_power).unwrap();
+                }
+            }
+        }
+    }
+
+    writeln!(out_file, "M5 ; Turn off laser").unwrap();
+    writeln!(out_file, "M2 ; End of program").unwrap();
     println!("Gtrace Core: Finished processing file - {}", file_path);
     println!("Finished Store the trace data {} line", state.segments.len());
 
