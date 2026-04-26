@@ -15,6 +15,20 @@ pub struct LineSegment {
     pub thickness: f64
 }
 
+fn create_circle(x: f64, y: f64, radius: f64) -> Polygon<f64> {
+    let mut points = vec![];
+    let sides = 12;
+    for i in 0..sides {
+        let angle = 2.0 * std::f64::consts::PI * (i as f64) / (sides as f64);
+        points.push(coord! {
+            x: x + radius * angle.cos(),
+            y: y + radius * angle.sin()
+        });
+    }
+    points.push(points[0]); 
+    Polygon::new(LineString::new(points), vec![])
+}
+
 fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
     let dx = segment.end_x - segment.start_x;
     let dy = segment.end_y - segment.start_y;
@@ -243,6 +257,10 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
 
     for segement in &state.segments {
         polygons.push(line_to_polygon(segement));
+
+        let r = segement.thickness / 2.0;
+        polygons.push(create_circle(segement.start_x, segement.start_y, r));
+        polygons.push(create_circle(segement.end_x, segement.end_y, r));
     }
 
     println!("Converted Line Segments into Polygons: {}", polygons.len());
