@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::os::raw::c_char;
 use std::collections::HashMap;
-use geo::{coord, LineString, Polygon, MutiPolygon};
-use geo_booleanop::boolean::BooleanOp;
+use geo::{coord, LineString, Polygon, MultiPolygon};
+use geo::BooleanOps;
 
 #[derive(Debug)]
 pub struct LineSegment {
@@ -244,8 +244,19 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
     for segement in &state.segments {
         polygons.push(line_to_polygon(segement));
     }
-    
+
     println!("Converted Line Segments into Polygons: {}", polygons.len());
+    
+    println!("Performing boolean union on polygons...");
+
+    let mut merged_area: MultiPolygon<f64> = MultiPolygon::new(vec![]);
+
+    for poly in polygons {
+        let poly_as_multi = MultiPolygon::new(vec![poly]);
+        merged_area = merged_area.union(&poly_as_multi);
+    }
+
+    println!("Polygon Merged complete. Total merged polygons: {}", merged_area.0.len());
     println!("Gtrace Core: Finished processing file - {}", file_path);
     println!("Finished Store the trace data {} line", state.segments.len());
 
