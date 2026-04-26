@@ -7,6 +7,13 @@ use geo::{coord, LineString, Polygon, MultiPolygon};
 use geo::BooleanOps;
 
 #[derive(Debug)]
+pub struct SolderPad {
+    pub x: f64,
+    pub y: f64,
+    pub diameter: f64,
+}
+
+#[derive(Debug)]
 pub struct LineSegment {
     pub start_x: f64,
     pub start_y: f64,
@@ -34,7 +41,7 @@ fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
     let dy = segment.end_y - segment.start_y;
     let length = (dx * dx + dy * dy).sqrt();
 
-    if length == 0.0 {
+    if length < 0.0001 {
         let radius = segment.thickness / 2.0;
         let mut points = vec![];
         let sides = 8;
@@ -87,7 +94,8 @@ pub struct CncState {
     pub scale_factor: f64,
     pub apertures: HashMap<i32, f64>,
     pub current_aperture: i32,
-    pub segments: Vec<LineSegment>
+    pub traces: Vec<LineSegment>,
+    pub pins: Vec<SolderPad>
 }
 
 impl CncState {
@@ -100,7 +108,8 @@ impl CncState {
             scale_factor: 1_000_000.0,
             apertures: HashMap::new(),
             current_aperture: 0,
-            segments: Vec::new()
+            traces: Vec::new(),
+            pins: Vec::new()
         }
     }
 
@@ -231,7 +240,7 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
 
                 } else if d_code == 1 {
                     state.is_laser_on = true;
-                    state.segments.push(LineSegment {
+                    state.traces.push(LineSegment {
                         start_x: old_x,
                         start_y: old_y,
                         end_x: state.current_x,
@@ -239,13 +248,11 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
                         thickness: state.current_thickeness()
                     });
                 } else if d_code == 3 {
-                    state.segments.push(LineSegment {
-                        start_x: state.current_x,
-                        start_y: state.current_y,
-                        end_x: state.current_x,
-                        end_y: state.current_y,
-                        thickness: state.current_thickeness()
-                    })
+                    state.pins.push(SolderPad {
+                        x: state.current_x,
+                        y: state.current_y,
+                        diameter: state.current_thickeness()
+                    });
                 }
             }
         }
@@ -255,12 +262,17 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
 
     let mut polygons: Vec<Polygon<f64>> = Vec::new();
 
-    for segement in &state.segments {
-        polygons.push(line_to_polygon(segement));
+    for trace in &state.traces {
+        polygons.push(line_to_polygon(trace));
 
-        let r = segement.thickness / 2.0;
-        polygons.push(create_circle(segement.start_x, segement.start_y, r));
-        polygons.push(create_circle(segement.end_x, segement.end_y, r));
+        let r = trace.thickness / 2.0;
+        polygons.push(create_circle(trace.start_x, trace.start_y, r));
+        polygons.push(create_circle(trace.end_x, trace.end_y, r));
+    }
+
+    for pin in &state.pins {
+        let r = pin.diameter / 2.0;
+        polygons.push(create_circle(pin.x, pin.y, r));
     }
 
     println!("Converted Line Segments into Polygons: {}", polygons.len());
@@ -304,7 +316,8 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
     writeln!(out_file, "M5 ; Turn off laser").unwrap();
     writeln!(out_file, "M2 ; End of program").unwrap();
     println!("Gtrace Core: Finished processing file - {}", file_path);
-    println!("Finished Store the trace data {} line", state.segments.len());
+    println!("Finished Store the trace data {} line", state.traces.len());
+    println!("Finished Store the pin data {} line", state.pins.len());
 
     1
 }
