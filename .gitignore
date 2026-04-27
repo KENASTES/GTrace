@@ -1,14 +1,21 @@
-**/target/
+/Core_Engine/target/
 **/*.rs.bk
+
+/Front_End/bin/
+/Front_End/obj/
+/Front_End/.vs/
+*.user
 
 **/[Bb]in/
 **/[Oo]bj/
+**/publish/
 
 .vs/
 *.user
 *.suo
 *.userosscache
 *.sln.docstates
+**/Output/
 
 Thumbs.db
 Thumbs.db:encryptable
@@ -19,9 +26,16 @@ ehthumbs_vista.db
 *.msm
 *.msp
 *.lnk
+*.exe
+*.msi
+*.zip
+*.rar
 
 .DS_Store
 
 *.log
+*.gcode
+*.nc
+*.tap
 
 Front_End/core_engine.dll
