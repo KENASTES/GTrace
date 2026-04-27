@@ -94,6 +94,7 @@ pub struct CncState {
     pub scale_factor: f64,
     pub apertures: HashMap<i32, f64>,
     pub current_aperture: i32,
+    pub current_d_code: i32,
     pub traces: Vec<LineSegment>,
     pub pins: Vec<SolderPad>
 }
@@ -108,6 +109,7 @@ impl CncState {
             scale_factor: 1_000_000.0,
             apertures: HashMap::new(),
             current_aperture: 0,
+            current_d_code: 2,
             traces: Vec::new(),
             pins: Vec::new()
         }
@@ -118,7 +120,7 @@ impl CncState {
     }
 
     pub fn current_thickeness(&self) -> f64 {
-        *self.apertures.get(&self.current_aperture).unwrap_or(&0.1)
+        *self.apertures.get(&self.current_aperture).unwrap_or(&1.5)
     }
 }
 
@@ -201,14 +203,22 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
         }
 
         if line.starts_with("%ADD") {
-            if let Some(c_idx) = line.find("C"){
-                if let Ok(d_code) = line[4..c_idx].parse::<i32>() {
-                    if let Some(comma_idx) = line.find(','){
-                        let star_idx = line.find('*').unwrap_or(line.len());
-                        if let Ok(size) = line[comma_idx + 1..star_idx].parse::<f64>() {
-                            state.apertures.insert(d_code, size);
-                            println!("Defined aperture D{} with size {}", d_code, size);
-                        }
+            println!("Parsing aperture definition: {}", line);
+
+            if let Some(comma_idx) = line.find(',') {
+                let prefix = &line[4..comma_idx]; 
+                
+                let d_code_str: String = prefix.chars().filter(|c| c.is_ascii_digit()).collect();
+                let star_idx = line.find('*').unwrap_or(line.len());
+                if star_idx > comma_idx {
+                    let params = line[comma_idx + 1 .. star_idx].to_uppercase();
+                    let size_str = params.split('X').next().unwrap_or("0").trim();
+                    
+                    if let (Ok(d_code), Ok(size)) = (d_code_str.parse::<i32>(), size_str.parse::<f64>()) {
+                        state.apertures.insert(d_code, size);
+                        println!("Complete the diameter scan D{} = {} mm", d_code, size);
+                    } else {
+                        println!("Cant parse the aperture definition D='{}', Size='{}'", d_code_str, size_str);
                     }
                 }
             }
@@ -219,6 +229,9 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
 
             let old_x = state.current_x;
             let old_y = state.current_y;
+            let has_x = extract_coordinates(line, 'X');
+            let has_y = extract_coordinates(line, 'Y');
+            let d_val = extract_coordinates(line, 'D');
 
             if let Some(raw_x) = extract_coordinates(line, 'X') {
                 state.current_x = state.parse_coordinate(raw_x);
@@ -227,19 +240,26 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
                 state.current_y = state.parse_coordinate(raw_y);
             }
 
-            if let Some(d_code) = extract_coordinates(line, 'D') {
-                let d_code = d_code as i32;
-                
-                if d_code >= 10 {
-                    state.current_aperture = d_code;
-                    if let Some(size) = state.apertures.get(&d_code) {
-                        println!("Selected aperture D{} with size {}", d_code, size);
-                    }
-                } else if d_code >= 2 {
-                    state.is_laser_on = false;
+            let mut should_execute = false;
 
-                } else if d_code == 1 {
-                    state.is_laser_on = true;
+                if let Some(dv) = d_val {
+                    let d_code = dv as i32;
+                        
+                    if d_code >= 10 {
+                        state.current_aperture = d_code;
+                        if let Some(size) = state.apertures.get(&d_code) {
+                            println!("Selected aperture D{} with size {} mm", d_code, size);
+                        }
+                    } else {
+                        state.current_d_code = d_code;
+                        should_execute = true;
+                    }
+                } else if has_x.is_some() || has_y.is_some() {
+                    should_execute = true;
+                }
+
+                if should_execute {
+                    if state.current_d_code == 1 {
                     state.traces.push(LineSegment {
                         start_x: old_x,
                         start_y: old_y,
@@ -247,16 +267,19 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
                         end_y: state.current_y,
                         thickness: state.current_thickeness()
                     });
-                } else if d_code == 3 {
+                } else if state.current_d_code == 3 {
+                    let pin_size = state.current_thickeness();
                     state.pins.push(SolderPad {
                         x: state.current_x,
                         y: state.current_y,
-                        diameter: state.current_thickeness()
+                        diameter: pin_size
                     });
+                    println!("Added pin at X({:.3}, Y{:.3}) with diameter {:.4} mm", state.current_x, state.current_y, pin_size);
                 }
             }
         }
     }
+
 
     println!("Generating Polygon data from line segments...");
 
@@ -285,6 +308,11 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
         let poly_as_multi = MultiPolygon::new(vec![poly]);
         merged_area = merged_area.union(&poly_as_multi);
     }
+
+    let mut min_x = f64::MAX;
+    let mut max_x = f64::MIN;
+
+    
 
     println!("Polygon Merged complete. Total merged polygons: {}", merged_area.0.len());
     println!("Start to generate Gcode from the merged polygons...");
