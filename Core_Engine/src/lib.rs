@@ -135,7 +135,7 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i32, laser_power: i32) -> i32 {
+pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i32, laser_power: i32, mirror_x: i32) -> i32 {
     if path_ptr.is_null() {
         return -1; 
     }
@@ -312,7 +312,24 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
     let mut min_x = f64::MAX;
     let mut max_x = f64::MIN;
 
-    
+    for poly in merged_area.iter() {
+        for c in poly.exterior().coords() {
+            if c.x < min_x {
+                min_x = c.x;
+            }
+            if c.x > max_x {
+                max_x = c.x;
+            }
+        }
+    }
+
+    let get_x = |x: f64| -> f64 {
+        if mirror_x == 1 {
+            max_x + min_x - x 
+        } else {
+            x
+        }
+    };
 
     println!("Polygon Merged complete. Total merged polygons: {}", merged_area.0.len());
     println!("Start to generate Gcode from the merged polygons...");
@@ -321,21 +338,23 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
         writeln!(out_file, "; Polygon {}", i + 1).unwrap();
 
         let exterior = poly.exterior();
-        for (pt_idx, coordinates) in exterior.coords().enumerate() {
-            if pt_idx == 0 {
-                writeln!(out_file, "G0 X{:.4} Y{:.4} S0", coordinates.x, coordinates.y).unwrap();
+        for (i, c) in exterior.coords().enumerate() {
+            let px = get_x(c.x);
+            if i == 0 {
+                writeln!(out_file, "G0 X{:.4} Y{:.4} S0", px, c.y).unwrap();
             } else {
-                writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", coordinates.x, coordinates.y, laser_power).unwrap();
+                writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", px, c.y, laser_power).unwrap();
             }
         }
 
         for interior in poly.interiors() {
             writeln!(out_file, "; Clear the hole").unwrap();
             for (pt_idx, coordinates) in interior.coords().enumerate() {
+                let px = get_x(coordinates.x);
                 if pt_idx == 0 {
-                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", coordinates.x, coordinates.y).unwrap();
+                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", px, coordinates.y).unwrap();
                 } else {
-                    writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", coordinates.x, coordinates.y, laser_power).unwrap();
+                    writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", px, coordinates.y, laser_power).unwrap();
                 }
             }
         }

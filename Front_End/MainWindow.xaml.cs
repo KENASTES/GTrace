@@ -17,7 +17,7 @@ namespace Front_End
     public partial class MainWindow : Window
     {
         [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        public static extern int process_gerber_to_gcode(string path_ptr, int feed_rate, int laser_power);
+        public static extern int process_gerber_to_gcode(string path_ptr, int feed_rate, int laser_power, int mirror_x);
 
         private string selectedFilePath = "";
 
@@ -48,6 +48,8 @@ namespace Front_End
             }
         }
 
+        const int FIXED_LASER_POWER = 215;
+
         private void GenerateButtonClick(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(selectedFilePath))
@@ -56,16 +58,17 @@ namespace Front_End
                 return;
             }
 
-            int feedRate = 800;
-            int laserPower = 205;
+            int feedRate = int.Parse(FeedRateInput.Text);
+            int laserPower = FIXED_LASER_POWER;
+            int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
 
             LogToConsole("----------------------------------");
             LogToConsole("Starting G-Code generation...");
-            LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Laser Power: {laserPower}");
+            LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Laser Power: {laserPower}, Mirror X: {mirrorX}");
 
             try
             {
-                int result = process_gerber_to_gcode(selectedFilePath, feedRate, laserPower);
+                int result = process_gerber_to_gcode(selectedFilePath, feedRate, laserPower, mirrorX);
 
                 if (result == 1)
                 {
@@ -78,7 +81,7 @@ namespace Front_End
             }
             catch (Exception ex)
             {
-                LogToConsole($"EXCEPTION: DLL ไม่พร้อมทำงาน หรือเกิดข้อผิดพลาด -> {ex.Message}");
+                LogToConsole($"EXCEPTION: DLL Error while processing Error code -> {ex.Message}");
             }
         }
     }
