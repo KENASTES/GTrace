@@ -135,30 +135,36 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i32, laser_power: i32, mirror_x: i32) -> i32 {
-    if path_ptr.is_null() {
+pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_path_ptr: *const c_char, feed_rate: i32, laser_power: i32, mirror_x: i32) -> i32 {
+    if input_path_ptr.is_null() {
         return -1; 
     }
 
-    let c_str = unsafe { CStr::from_ptr(path_ptr) };
+    let c_input = unsafe { CStr::from_ptr(input_path_ptr) };
     
-    let file_path = match c_str.to_str() {
+    let input_path = match c_input.to_str() {
         Ok(s) => s,
         Err(_) => return -2, 
     };
 
-    println!("Gtrace Core : Computing File - {}", file_path);
+    let c_out = unsafe { CStr::from_ptr(out_path_ptr) };
+
+    let out_path = match c_out.to_str() {
+        Ok(s) => s,
+        Err(_) => return -2, 
+    };
+
+    println!("Gtrace Core : Computing File - {}", input_path);
     
-    let file = match File::open(file_path){
+    let file = match File::open(input_path){
         Ok(f) => f,
         Err(_e) => {
-            println!("Gtrace Core : Failed to open file - {}", file_path);
+            println!("Gtrace Core : Failed to open file - {}", input_path);
             return -3;
         } 
     };
 
-    let out_file_path = format!("{}.gcode", file_path);
-    let mut out_file = match File::create(&out_file_path) {
+    let mut out_file = match File::create(out_path) {
         Ok(f) => f,
         Err(_) => return -4,
     };
@@ -362,7 +368,7 @@ pub extern "C" fn process_gerber_to_gcode(path_ptr: *const c_char, feed_rate: i3
 
     writeln!(out_file, "M5 ; Turn off laser").unwrap();
     writeln!(out_file, "M2 ; End of program").unwrap();
-    println!("Gtrace Core: Finished processing file - {}", file_path);
+    println!("Gtrace Core: Finished processing file - {}", out_path);
     println!("Finished Store the trace data {} line", state.traces.len());
     println!("Finished Store the pin data {} line", state.pins.len());
 

@@ -17,9 +17,10 @@ namespace Front_End
     public partial class MainWindow : Window
     {
         [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        public static extern int process_gerber_to_gcode(string path_ptr, int feed_rate, int laser_power, int mirror_x);
+        public static extern int process_gerber_to_gcode(string path_ptr, string output_path, int feed_rate, int laser_power, int mirror_x);
 
         private string selectedFilePath = "";
+        private string selectedOutputPath = "";
 
         public MainWindow()
         {
@@ -48,6 +49,24 @@ namespace Front_End
             }
         }
 
+        private void SaveFileButtonClick(object sender, RoutedEventArgs e)
+        {
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+            saveFileDialog.Filter = "G-Code files (*.gcode)|*.gcode|All files (*.*)|*.*";
+
+            if (!string.IsNullOrEmpty(SelectedFileText.Text) && SelectedFileText.Text != "No file selected")
+            {
+                saveFileDialog.FileName = System.IO.Path.GetFileNameWithoutExtension(selectedOutputPath);
+            }
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                selectedOutputPath = saveFileDialog.FileName;
+                OutputFilePathText.Text = selectedOutputPath;
+                LogToConsole($"Output file path set: {System.IO.Path.GetFileName(selectedOutputPath)}");
+            }
+        }
+
         const int FIXED_LASER_POWER = 215;
 
         private void GenerateButtonClick(object sender, RoutedEventArgs e)
@@ -68,7 +87,7 @@ namespace Front_End
 
             try
             {
-                int result = process_gerber_to_gcode(selectedFilePath, feedRate, laserPower, mirrorX);
+                int result = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX);
 
                 if (result == 1)
                 {

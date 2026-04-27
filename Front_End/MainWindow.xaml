@@ -6,121 +6,168 @@
         Width="800"
         Background="#F0F0F0">
 
-    <Window.Resources>
-        <Style TargetType="CheckBox" x:Key="ModernCheckBox">
-            <Setter Property="Foreground" Value="#333"/>
-            <Setter Property="FontSize" Value="13"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Margin" Value="0,5,0,15"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="CheckBox">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Border x:Name="Border" Width="18" Height="18"
-                                    Background="White" BorderBrush="#BDBDBD" BorderThickness="1.5"
-                                    CornerRadius="4" VerticalAlignment="Center">
-                                <Path x:Name="CheckMark"
-                                      Data="M 4,9 L 8,13 L 14,5"
-                                      Stroke="White" StrokeThickness="2.5"
-                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      StrokeLineJoin="Round"
-                                      Visibility="Collapsed"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ContentPresenter Margin="10,0,0,0" VerticalAlignment="Center"/>
-                        </StackPanel>
-                        
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Border" Property="Background" Value="#007ACC"/>
-                                <Setter TargetName="Border" Property="BorderBrush" Value="#007ACC"/>
-                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
-                            </Trigger>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Border" Property="BorderBrush" Value="#007ACC"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
+        <Window.Resources>
+                <Style TargetType="CheckBox"
+                                x:Key="ModernCheckBox">
+                        <Setter Property="Foreground"
+                                        Value="#333"/>
+                        <Setter Property="FontSize"
+                                        Value="13"/>
+                        <Setter Property="FontWeight"
+                                        Value="SemiBold"/>
+                        <Setter Property="Margin"
+                                        Value="0,5,0,15"/>
+                        <Setter Property="Template">
+                                <Setter.Value>
+                                        <ControlTemplate TargetType="CheckBox">
+                                                <StackPanel Orientation="Horizontal"
+                                                                VerticalAlignment="Center">
+                                                        <Border x:Name="Border"
+                                                                        Width="18"
+                                                                        Height="18"
+                                                                Background="White"
+                                                                        BorderBrush="#BDBDBD"
+                                                                        BorderThickness="1.5"
+                                                                CornerRadius="4"
+                                                                        VerticalAlignment="Center">
+                                                                <Path x:Name="CheckMark"
+                                                                      Data="M 4,9 L 8,13 L 14,5"
+                                                                      Stroke="White"
+                                                                                StrokeThickness="2.5"
+                                                                      StrokeStartLineCap="Round"
+                                                                                StrokeEndLineCap="Round"
+                                                                      StrokeLineJoin="Round"
+                                                                      Visibility="Collapsed"
+                                                                      HorizontalAlignment="Center"
+                                                                                VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        <ContentPresenter Margin="10,0,0,0"
+                                                                        VerticalAlignment="Center"/>
+                                                </StackPanel>
 
-    <Grid Margin="15">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="280"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+                                                <ControlTemplate.Triggers>
+                                                        <Trigger Property="IsChecked"
+                                                                        Value="True">
+                                                                <Setter TargetName="Border"
+                                                                                Property="Background"
+                                                                                Value="#007ACC"/>
+                                                                <Setter TargetName="Border"
+                                                                                Property="BorderBrush"
+                                                                                Value="#007ACC"/>
+                                                                <Setter TargetName="CheckMark"
+                                                                                Property="Visibility"
+                                                                                Value="Visible"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsMouseOver"
+                                                                        Value="True">
+                                                                <Setter TargetName="Border"
+                                                                                Property="BorderBrush"
+                                                                                Value="#007ACC"/>
+                                                        </Trigger>
+                                                </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                </Setter.Value>
+                        </Setter>
+                </Style>
+        </Window.Resources>
 
-        <StackPanel Grid.Column="0" Margin="0,0,15,0">
-            <TextBlock Text="GTRACE"
-                       FontSize="28"
-                       FontWeight="Black"
-                       Foreground="#333"
-                       Margin="0,0,0,5"/>
-            <TextBlock Text="Garber to G-Code Converter"
-                       FontSize="14"
-                       Foreground="#666"
-                       Margin="0,0,0,20"/>
-
-            <TextBlock Text="Input File"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,5"/>
-            <Button Name="SelectFileButton"
-                    Content="Browse a Garber File"
-                    Height="35"
-                    Click="SelectFileButtonClick"/>
-            <TextBlock Name="SelectedFileText"
-                       Text="No file selected"
-                       FontSize="11"
-                       Foreground="Gray"
-                       TextWrapping="Wrap"
-                       Margin="0,5,0,15"/>
-
-            <TextBlock Text="G-Code Settings"
-                       FontWeight="SemiBold"
-                       Margin="0,0,0,5"/>
-
-            <Grid Margin="0,0,0,10">
+        <Grid Margin="15">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="80"/>
+                        <ColumnDefinition Width="280"/>
+                        <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Feed Rate (mm/min):"
-                           VerticalAlignment="Center"/>
-                <TextBox Name="FeedRateInput"
-                         Grid.Column="1"
-                         Text="800"
-                         Height="25"
-                         VerticalContentAlignment="Center"
-                         Padding="5,0"/>
-            </Grid>
-            
-            <CheckBox Name="chkMirrorX"
-                      Content="Mirror X-Axis (Bottom Layer)"
-                      Style="{StaticResource ModernCheckBox}"/>
 
-            <Button Name="GenerateButton"
-                    Content="GENERATE G-CODE"
-                    Height="45"
-                    Background="#007ACC"
-                    Foreground="White"
-                    FontWeight="Bold"
-                    FontSize="14"/>
-        </StackPanel>
+                <StackPanel Grid.Column="0"
+                                Margin="0,0,15,0">
+                        <TextBlock Text="GTRACE"
+                                   FontSize="28"
+                                   FontWeight="Black"
+                                   Foreground="#333"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock Text="Garber to G-Code Converter"
+                                   FontSize="14"
+                                   Foreground="#666"
+                                   Margin="0,0,0,20"/>
 
-        <GroupBox Grid.Column="1"
-                  Header="Process Console"
-                  FontWeight="Bold">
-            <TextBox Name="ConsoleLog"
-                     IsReadOnly="True"
-                     Background="#1E1E1E"
-                     Foreground="#4CAF50"
-                     FontFamily="Consolas"
-                     TextWrapping="Wrap"
-                     VerticalScrollBarVisibility="Auto"
-                     Text="> Gtrace Core Engine Initialized...&#x0A;> Waiting for input..."
-                     Padding="10"/>
-        </GroupBox>
-    </Grid>
+                        <TextBlock Text="Input File"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+                        <Button Name="SelectFileButton"
+                                Content="Browse a Garber File"
+                                Height="35"
+                                Click="SelectFileButtonClick"/>
+                        <TextBlock Name="SelectedFileText"
+                                   Text="No file selected"
+                                   FontSize="11"
+                                   Foreground="Gray"
+                                   TextWrapping="Wrap"
+                                   Margin="0,5,0,15"/>
+
+                        <TextBlock Text="G-Code Settings"
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
+
+                        <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="80"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Feed Rate (mm/min):"
+                                           VerticalAlignment="Center"/>
+                                <TextBox Name="FeedRateInput"
+                                         Grid.Column="1"
+                                         Text="800"
+                                         Height="25"
+                                         VerticalContentAlignment="Center"
+                                         Padding="5,0"/>
+                        </Grid>
+
+                        <CheckBox Name="chkMirrorX"
+                                  Content="Mirror X-Axis (Bottom Layer)"
+                                  Style="{StaticResource ModernCheckBox}"/>
+
+                        <TextBlock Text="Output G-Code File"
+                                        FontWeight="SemiBold"
+                                        Margin="0,0,0,5"/>
+                        <Grid Margin="0,0,0,15">
+                                <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Name="OutputFilePathText"
+                                         Text="No path selected"
+                                         IsReadOnly="True"
+                                         Background="#E0E0E0"
+                                                Padding="5"/>
+                                <Button Name="SaveFileButton"
+                                        Grid.Column="1"
+                                        Content="Save As..."
+                                        Width="80"
+                                                Margin="10,0,0,0"
+                                        Click="SaveFileButtonClick"/>
+                        </Grid>
+
+                        <Button Name="GenerateButton"
+                                Content="GENERATE G-CODE"
+                                Height="45"
+                                Background="#007ACC"
+                                Foreground="White"
+                                FontWeight="Bold"
+                                FontSize="14"/>
+                </StackPanel>
+
+                <GroupBox Grid.Column="1"
+                          Header="Process Console"
+                          FontWeight="Bold">
+                        <TextBox Name="ConsoleLog"
+                                 IsReadOnly="True"
+                                 Background="#1E1E1E"
+                                 Foreground="#4CAF50"
+                                 FontFamily="Consolas"
+                                 TextWrapping="Wrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 Text="> Gtrace Core Engine Initialized...&#x0A;> Waiting for input..."
+                                 Padding="10"/>
+                </GroupBox>
+        </Grid>
 </Window>
