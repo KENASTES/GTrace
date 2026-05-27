@@ -211,11 +211,11 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
         }
 
         if line.starts_with("%MOMM") {
-            state.unit_scale_to_mm = 1.0;
+            state.unit_scale_in_mm = 1.0;
         }
 
         if line.starts_with("%MOIN") {
-            state.unit_scale_to_mm = 25.4;
+            state.unit_scale_in_mm = 25.4;
         }
 
         if line.starts_with("%ADD") {
