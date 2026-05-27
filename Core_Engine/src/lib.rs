@@ -92,6 +92,7 @@ pub struct CncState {
     pub is_laser_on: bool,
     pub format_decimals: u8,
     pub scale_factor: f64,
+    pub unit_scale_in_mm: f64,
     pub apertures: HashMap<i32, f64>,
     pub current_aperture: i32,
     pub current_d_code: i32,
@@ -132,6 +133,10 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
     } else {
         None
     }
+}
+
+pub fn parse_condinates(&self, raw_val: f64) -> f64 {
+    raw_val / self.scale_factor * self.unit_scale_in_mm
 }
 
 #[unsafe(no_mangle)]
@@ -206,6 +211,14 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                 }
             }
             continue;
+        }
+
+        if line.start_with("%MOMM") {
+            state.unit_scale_to_mm = 0;
+        }
+
+        if line.start_with("%MOIN") {
+            state.unit_scale_to_mm = 25.4;
         }
 
         if line.starts_with("%ADD") {
