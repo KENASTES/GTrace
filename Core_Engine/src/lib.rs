@@ -108,6 +108,7 @@ impl CncState {
             is_laser_on: false,
             format_decimals: 6,
             scale_factor: 1_000_000.0,
+            unit_scale_in_mm: 1.0,
             apertures: HashMap::new(),
             current_aperture: 0,
             current_d_code: 2,
@@ -117,7 +118,7 @@ impl CncState {
     }
 
     pub fn parse_coordinate(&self, raw_val: f64) -> f64 {
-        raw_val / self.scale_factor
+        raw_val / self.scale_factor * self.unit_scale_in_mm
     }
 
     pub fn current_thickeness(&self) -> f64 {
@@ -133,10 +134,6 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
     } else {
         None
     }
-}
-
-pub fn parse_condinates(&self, raw_val: f64) -> f64 {
-    raw_val / self.scale_factor * self.unit_scale_in_mm
 }
 
 #[unsafe(no_mangle)]
@@ -213,11 +210,11 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
             continue;
         }
 
-        if line.start_with("%MOMM") {
-            state.unit_scale_to_mm = 0;
+        if line.starts_with("%MOMM") {
+            state.unit_scale_to_mm = 1.0;
         }
 
-        if line.start_with("%MOIN") {
+        if line.starts_with("%MOIN") {
             state.unit_scale_to_mm = 25.4;
         }
 
@@ -234,7 +231,7 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                     let size_str = params.split('X').next().unwrap_or("0").trim();
                     
                     if let (Ok(d_code), Ok(size)) = (d_code_str.parse::<i32>(), size_str.parse::<f64>()) {
-                        state.apertures.insert(d_code, size);
+                        state.apertures.insert(d_code, size * state.unit_scale_in_mm);
                         println!("Complete the diameter scan D{} = {} mm", d_code, size);
                     } else {
                         println!("Cant parse the aperture definition D='{}', Size='{}'", d_code_str, size_str);
