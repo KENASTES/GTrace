@@ -85,6 +85,20 @@ fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
     Polygon::new(LineString::new(vec![p1, p2, p3, p4, p1]), vec![])
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum ApertureShape {
+    Circle,
+    Rectangle,
+    Obround,
+}
+
+#[derive(Debug, Clone)]
+pub struct Aperture {
+    pub shape: ApertureShape,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug)]
 pub struct CncState {
     pub current_x: f64,
@@ -93,7 +107,7 @@ pub struct CncState {
     pub format_decimals: u8,
     pub scale_factor: f64,
     pub unit_scale_in_mm: f64,
-    pub apertures: HashMap<i32, f64>,
+    pub apertures: HashMap<i32, Aperture>,
     pub current_aperture: i32,
     pub current_d_code: i32,
     pub traces: Vec<LineSegment>,
@@ -231,8 +245,9 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                     let size_str = params.split('X').next().unwrap_or("0").trim();
                     
                     if let (Ok(d_code), Ok(size)) = (d_code_str.parse::<i32>(), size_str.parse::<f64>()) {
-                        state.apertures.insert(d_code, size * state.unit_scale_in_mm);
-                        println!("Complete the diameter scan D{} = {} mm", d_code, size);
+                        let size_unit_mm = size * state.unit_scale_in_mm;
+                        state.apertures.insert(d_code, size_unit_mm);
+                        println!("Complete the diameter scan D{} = {} mm", d_code, size_unit_mm);
                     } else {
                         println!("Cant parse the aperture definition D='{}', Size='{}'", d_code_str, size_str);
                     }
