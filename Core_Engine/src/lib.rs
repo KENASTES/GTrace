@@ -6,11 +6,26 @@ use std::collections::HashMap;
 use geo::{coord, LineString, Polygon, MultiPolygon};
 use geo::BooleanOps;
 
+
+#[derive(Debug, Clone, Copy)]
+pub enum ApertureShape {
+    Circle,
+    Rectangle,
+    Obround,
+}
+
+#[derive(Debug, Clone)]
+pub struct Aperture {
+    pub shape: ApertureShape,
+    pub width: f64,
+    pub height: f64,
+}
+
 #[derive(Debug)]
 pub struct SolderPad {
     pub x: f64,
     pub y: f64,
-    pub diameter: f64,
+    pub aperture: Aperture,
 }
 
 #[derive(Debug)]
@@ -85,20 +100,6 @@ fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
     Polygon::new(LineString::new(vec![p1, p2, p3, p4, p1]), vec![])
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum ApertureShape {
-    Circle,
-    Rectangle,
-    Obround,
-}
-
-#[derive(Debug, Clone)]
-pub struct Aperture {
-    pub shape: ApertureShape,
-    pub width: f64,
-    pub height: f64,
-}
-
 #[derive(Debug)]
 pub struct CncState {
     pub current_x: f64,
@@ -135,8 +136,19 @@ impl CncState {
         raw_val / self.scale_factor * self.unit_scale_in_mm
     }
 
+    pub fn current_aperture(&self) -> Aperture {
+        self.apertures.get(&self.current_aperture)
+        .cloned()
+        .unwrap_or(Aperture {
+            shape: ApertureShape::Circle,
+            width: 1.5,
+            height: 1.5,
+        })
+    }
+
     pub fn current_thickeness(&self) -> f64 {
-        *self.apertures.get(&self.current_aperture).unwrap_or(&1.5)
+        let aperture = self.current_aperture();
+        aperture.width.max(aperture.height)
     }
 }
 
@@ -246,7 +258,13 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                     
                     if let (Ok(d_code), Ok(size)) = (d_code_str.parse::<i32>(), size_str.parse::<f64>()) {
                         let size_unit_mm = size * state.unit_scale_in_mm;
-                        state.apertures.insert(d_code, size_unit_mm);
+                        let aperture = Aperture {
+                            shape: ApertureShape::Circle,
+                            width: size_unit_mm,
+                            height: size_unit_mm,
+                        };
+                        
+                        state.apertures.insert(d_code, aperture);
                         println!("Complete the diameter scan D{} = {} mm", d_code, size_unit_mm);
                     } else {
                         println!("Cant parse the aperture definition D='{}', Size='{}'", d_code_str, size_str);
@@ -279,7 +297,13 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                     if d_code >= 10 {
                         state.current_aperture = d_code;
                         if let Some(size) = state.apertures.get(&d_code) {
-                            println!("Selected aperture D{} with size {} mm", d_code, size);
+                            println!(
+                                "Selected aperture D{} {:?} {} x {} mm",
+                                    d_code,
+                                    size.shape,
+                                    size.width,
+                                    size.height
+                                );
                         }
                     } else {
                         state.current_d_code = d_code;
@@ -300,10 +324,11 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                     });
                 } else if state.current_d_code == 3 {
                     let pin_size = state.current_thickeness();
+                    let aperture = state.current_aperture();
                     state.pins.push(SolderPad {
                         x: state.current_x,
                         y: state.current_y,
-                        diameter: pin_size
+                        aperture,
                     });
                     println!("Added pin at X({:.3}, Y{:.3}) with diameter {:.4} mm", state.current_x, state.current_y, pin_size);
                 }
@@ -325,7 +350,7 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
     }
 
     for pin in &state.pins {
-        let r = pin.diameter / 2.0;
+        let r = pin.aperture.width.max(pin.aperture.height) / 2.0;
         polygons.push(create_circle(pin.x, pin.y, r));
     }
 
