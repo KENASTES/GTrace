@@ -1,11 +1,10 @@
+use geo::BooleanOps;
+use geo::{LineString, MultiPolygon, Polygon, coord};
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::os::raw::c_char;
-use std::collections::HashMap;
-use geo::{coord, LineString, Polygon, MultiPolygon};
-use geo::BooleanOps;
-
 
 #[derive(Debug, Clone, Copy)]
 pub enum ApertureShape {
@@ -34,12 +33,12 @@ pub struct LineSegment {
     pub start_y: f64,
     pub end_x: f64,
     pub end_y: f64,
-    pub thickness: f64
+    pub thickness: f64,
 }
 
 fn create_circle(x: f64, y: f64, radius: f64) -> Polygon<f64> {
     let mut points = vec![];
-    let sides = 12;
+    let sides = 64;
     for i in 0..sides {
         let angle = 2.0 * std::f64::consts::PI * (i as f64) / (sides as f64);
         points.push(coord! {
@@ -47,8 +46,55 @@ fn create_circle(x: f64, y: f64, radius: f64) -> Polygon<f64> {
             y: y + radius * angle.sin()
         });
     }
-    points.push(points[0]); 
+    points.push(points[0]);
     Polygon::new(LineString::new(points), vec![])
+}
+
+fn create_rectangle(x: f64, y: f64, width: f64, height: f64) -> Polygon<f64> {
+    let half_w = width / 2.0;
+    let half_h = height / 2.0;
+
+    let p1 = coord! { x: x - half_w, y: y - half_h };
+    let p2 = coord! { x: x + half_w, y: y - half_h };
+    let p3 = coord! { x: x + half_w, y: y + half_h };
+    let p4 = coord! { x: x - half_w, y: y + half_h };
+
+    Polygon::new(LineString::new(vec![p1, p2, p3, p4, p1]), vec![])
+}
+
+fn create_obround(x: f64, y: f64, width: f64, height: f64) -> MultiPolygon<f64> {
+    if (width - height).abs() < 0.0001 {
+        return MultiPolygon::new(vec![create_circle(x, y, width / 2.0)]);
+    }
+
+    if width > height {
+        let radius = height / 2.0;
+        let offset = (width - height) / 2.0;
+        let rect = MultiPolygon::new(vec![create_rectangle(x, y, width - height, height)]);
+        let left = MultiPolygon::new(vec![create_circle(x - offset, y, radius)]);
+        let right = MultiPolygon::new(vec![create_circle(x + offset, y, radius)]);
+        return rect.union(&left).union(&right);
+    }
+
+    let radius = width / 2.0;
+    let offset = (height - width) / 2.0;
+    let rect = MultiPolygon::new(vec![create_rectangle(x, y, width, height - width)]);
+    let bottom = MultiPolygon::new(vec![create_circle(x, y - offset, radius)]);
+    let top = MultiPolygon::new(vec![create_circle(x, y + offset, radius)]);
+    rect.union(&bottom).union(&top)
+}
+
+fn aperture_to_polygons(x: f64, y: f64, aperture: &Aperture) -> MultiPolygon<f64> {
+    match aperture.shape {
+        ApertureShape::Circle => MultiPolygon::new(vec![create_circle(x, y, aperture.width / 2.0)]),
+        ApertureShape::Rectangle => MultiPolygon::new(vec![create_rectangle(
+            x,
+            y,
+            aperture.width,
+            aperture.height,
+        )]),
+        ApertureShape::Obround => create_obround(x, y, aperture.width, aperture.height),
+    }
 }
 
 fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
@@ -69,7 +115,7 @@ fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
             });
         }
         points.push(points[0]);
-        
+
         return Polygon::new(LineString::new(points), vec![]);
     }
 
@@ -112,7 +158,7 @@ pub struct CncState {
     pub current_aperture: i32,
     pub current_d_code: i32,
     pub traces: Vec<LineSegment>,
-    pub pins: Vec<SolderPad>
+    pub pins: Vec<SolderPad>,
 }
 
 impl CncState {
@@ -128,7 +174,7 @@ impl CncState {
             current_aperture: 0,
             current_d_code: 2,
             traces: Vec::new(),
-            pins: Vec::new()
+            pins: Vec::new(),
         }
     }
 
@@ -137,13 +183,14 @@ impl CncState {
     }
 
     pub fn current_aperture(&self) -> Aperture {
-        self.apertures.get(&self.current_aperture)
-        .cloned()
-        .unwrap_or(Aperture {
-            shape: ApertureShape::Circle,
-            width: 1.5,
-            height: 1.5,
-        })
+        self.apertures
+            .get(&self.current_aperture)
+            .cloned()
+            .unwrap_or(Aperture {
+                shape: ApertureShape::Circle,
+                width: 1.5,
+                height: 1.5,
+            })
     }
 
     pub fn current_thickeness(&self) -> f64 {
@@ -155,7 +202,9 @@ impl CncState {
 fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
     if let Some(start_idx) = line.find(prefix) {
         let rest_of_string = &line[start_idx + 1..];
-        let end_idx = rest_of_string.find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+').unwrap_or(rest_of_string.len());
+        let end_idx = rest_of_string
+            .find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')
+            .unwrap_or(rest_of_string.len());
         rest_of_string[..end_idx].parse::<f64>().ok()
     } else {
         None
@@ -163,33 +212,39 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_path_ptr: *const c_char, feed_rate: i32, laser_power: i32, mirror_x: i32) -> i32 {
+pub extern "C" fn process_gerber_to_gcode(
+    input_path_ptr: *const c_char,
+    out_path_ptr: *const c_char,
+    feed_rate: i32,
+    laser_power: i32,
+    mirror_x: i32,
+) -> i32 {
     if input_path_ptr.is_null() {
-        return -1; 
+        return -1;
     }
 
     let c_input = unsafe { CStr::from_ptr(input_path_ptr) };
-    
+
     let input_path = match c_input.to_str() {
         Ok(s) => s,
-        Err(_) => return -2, 
+        Err(_) => return -2,
     };
 
     let c_out = unsafe { CStr::from_ptr(out_path_ptr) };
 
     let out_path = match c_out.to_str() {
         Ok(s) => s,
-        Err(_) => return -2, 
+        Err(_) => return -2,
     };
 
     println!("Gtrace Core : Computing File - {}", input_path);
-    
-    let file = match File::open(input_path){
+
+    let file = match File::open(input_path) {
         Ok(f) => f,
         Err(_e) => {
             println!("Gtrace Core : Failed to open file - {}", input_path);
             return -3;
-        } 
+        }
     };
 
     let mut out_file = match File::create(out_path) {
@@ -238,36 +293,61 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
 
         if line.starts_with("%MOMM") {
             state.unit_scale_in_mm = 1.0;
+            continue;
         }
 
         if line.starts_with("%MOIN") {
             state.unit_scale_in_mm = 25.4;
+            continue;
         }
 
         if line.starts_with("%ADD") {
             println!("Parsing aperture definition: {}", line);
 
             if let Some(comma_idx) = line.find(',') {
-                let prefix = &line[4..comma_idx]; 
-                
+                let prefix = &line[4..comma_idx];
+
                 let d_code_str: String = prefix.chars().filter(|c| c.is_ascii_digit()).collect();
+                let aperture_shape = match prefix.chars().find(|c| c.is_ascii_alphabetic()) {
+                    Some('C') | Some('c') => ApertureShape::Circle,
+                    Some('R') | Some('r') => ApertureShape::Rectangle,
+                    Some('O') | Some('o') => ApertureShape::Obround,
+                    _ => {
+                        println!("Unsupported aperture shape in: {}", line);
+                        continue;
+                    }
+                };
+
                 let star_idx = line.find('*').unwrap_or(line.len());
                 if star_idx > comma_idx {
-                    let params = line[comma_idx + 1 .. star_idx].to_uppercase();
-                    let size_str = params.split('X').next().unwrap_or("0").trim();
-                    
-                    if let (Ok(d_code), Ok(size)) = (d_code_str.parse::<i32>(), size_str.parse::<f64>()) {
-                        let size_unit_mm = size * state.unit_scale_in_mm;
+                    let params = line[comma_idx + 1..star_idx].to_uppercase();
+                    let mut size_parts = params.split('X').map(|part| part.trim());
+                    let width_str = size_parts.next().unwrap_or("0");
+                    let height_str = size_parts.next().unwrap_or(width_str);
+
+                    if let (Ok(d_code), Ok(width), Ok(height)) = (
+                        d_code_str.parse::<i32>(),
+                        width_str.parse::<f64>(),
+                        height_str.parse::<f64>(),
+                    ) {
+                        let width_mm = width * state.unit_scale_in_mm;
+                        let height_mm = height * state.unit_scale_in_mm;
                         let aperture = Aperture {
-                            shape: ApertureShape::Circle,
-                            width: size_unit_mm,
-                            height: size_unit_mm,
+                            shape: aperture_shape,
+                            width: width_mm,
+                            height: height_mm,
                         };
-                        
+
                         state.apertures.insert(d_code, aperture);
-                        println!("Complete the diameter scan D{} = {} mm", d_code, size_unit_mm);
+                        println!(
+                            "Complete aperture scan D{} = {:?} {} x {} mm",
+                            d_code, aperture_shape, width_mm, height_mm
+                        );
                     } else {
-                        println!("Cant parse the aperture definition D='{}', Size='{}'", d_code_str, size_str);
+                        println!(
+                            "Cant parse the aperture definition D='{}', Width='{}', Height='{}'",
+                            d_code_str, width_str, height_str
+                        );
                     }
                 }
             }
@@ -275,7 +355,6 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
         }
 
         if !line.starts_with('%') {
-
             let old_x = state.current_x;
             let old_y = state.current_y;
             let has_x = extract_coordinates(line, 'X');
@@ -291,36 +370,33 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
 
             let mut should_execute = false;
 
-                if let Some(dv) = d_val {
-                    let d_code = dv as i32;
-                        
-                    if d_code >= 10 {
-                        state.current_aperture = d_code;
-                        if let Some(size) = state.apertures.get(&d_code) {
-                            println!(
-                                "Selected aperture D{} {:?} {} x {} mm",
-                                    d_code,
-                                    size.shape,
-                                    size.width,
-                                    size.height
-                                );
-                        }
-                    } else {
-                        state.current_d_code = d_code;
-                        should_execute = true;
+            if let Some(dv) = d_val {
+                let d_code = dv as i32;
+
+                if d_code >= 10 {
+                    state.current_aperture = d_code;
+                    if let Some(size) = state.apertures.get(&d_code) {
+                        println!(
+                            "Selected aperture D{} {:?} {} x {} mm",
+                            d_code, size.shape, size.width, size.height
+                        );
                     }
-                } else if has_x.is_some() || has_y.is_some() {
+                } else {
+                    state.current_d_code = d_code;
                     should_execute = true;
                 }
+            } else if has_x.is_some() || has_y.is_some() {
+                should_execute = true;
+            }
 
-                if should_execute {
-                    if state.current_d_code == 1 {
+            if should_execute {
+                if state.current_d_code == 1 {
                     state.traces.push(LineSegment {
                         start_x: old_x,
                         start_y: old_y,
                         end_x: state.current_x,
                         end_y: state.current_y,
-                        thickness: state.current_thickeness()
+                        thickness: state.current_thickeness(),
                     });
                 } else if state.current_d_code == 3 {
                     let pin_size = state.current_thickeness();
@@ -330,12 +406,14 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                         y: state.current_y,
                         aperture,
                     });
-                    println!("Added pin at X({:.3}, Y{:.3}) with diameter {:.4} mm", state.current_x, state.current_y, pin_size);
+                    println!(
+                        "Added pin at X({:.3}, Y{:.3}) with diameter {:.4} mm",
+                        state.current_x, state.current_y, pin_size
+                    );
                 }
             }
         }
     }
-
 
     println!("Generating Polygon data from line segments...");
 
@@ -350,12 +428,13 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
     }
 
     for pin in &state.pins {
-        let r = pin.aperture.width.max(pin.aperture.height) / 2.0;
-        polygons.push(create_circle(pin.x, pin.y, r));
+        for poly in aperture_to_polygons(pin.x, pin.y, &pin.aperture) {
+            polygons.push(poly);
+        }
     }
 
     println!("Converted Line Segments into Polygons: {}", polygons.len());
-    
+
     println!("Performing boolean union on polygons...");
 
     let mut merged_area: MultiPolygon<f64> = MultiPolygon::new(vec![]);
@@ -379,15 +458,12 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
         }
     }
 
-    let get_x = |x: f64| -> f64 {
-        if mirror_x == 1 {
-            max_x + min_x - x 
-        } else {
-            x
-        }
-    };
+    let get_x = |x: f64| -> f64 { if mirror_x == 1 { max_x + min_x - x } else { x } };
 
-    println!("Polygon Merged complete. Total merged polygons: {}", merged_area.0.len());
+    println!(
+        "Polygon Merged complete. Total merged polygons: {}",
+        merged_area.0.len()
+    );
     println!("Start to generate Gcode from the merged polygons...");
 
     for (i, poly) in merged_area.iter().enumerate() {
@@ -402,6 +478,20 @@ pub extern "C" fn process_gerber_to_gcode(input_path_ptr: *const c_char, out_pat
                 writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", px, c.y, laser_power).unwrap();
             }
         }
+
+        for interior in poly.interiors() {
+            writeln!(out_file, "; Clear the hole").unwrap();
+            for (pt_idx, coordinates) in interior.coords().enumerate() {
+                let px = get_x(coordinates.x);
+                if pt_idx == 0 {
+                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", px, coordinates.y).unwrap();
+                } else {
+                    writeln!(
+                        out_file,
+                        "G1 X{:.4} Y{:.4} S{}",
+                        px, coordinates.y, laser_power
+                    )
+                    .unwrap();
 
         for interior in poly.interiors() {
             writeln!(out_file, "; Clear the hole").unwrap();
