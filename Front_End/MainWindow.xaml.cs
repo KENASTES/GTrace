@@ -17,7 +17,7 @@ namespace Front_End
     public partial class MainWindow : Window
     {
         [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        public static extern int process_gerber_to_gcode(string path_ptr, string output_path, int feed_rate, int laser_power, int mirror_x);
+        public static extern int process_gerber_to_gcode(string path_ptr, string output_path, int feed_rate, int laser_power, int mirror_x, double isolation_width_mm);
 
         private string selectedFilePath = "";
         private string selectedOutputPath = "";
@@ -77,17 +77,34 @@ namespace Front_End
                 return;
             }
 
-            int feedRate = int.Parse(FeedRateInput.Text);
+            if (string.IsNullOrEmpty(selectedOutputPath))
+            {
+                LogToConsole("ERROR: No output path selected. Please choose where to save the G-Code file.");
+                return;
+            }
+
+            if (!int.TryParse(FeedRateInput.Text, out int feedRate) || feedRate <= 0)
+            {
+                LogToConsole("ERROR: Feed Rate must be a positive number.");
+                return;
+            }
+
+            if (!double.TryParse(IsolationWidthInput.Text, out double isolationWidthMm) || isolationWidthMm <= 0)
+            {
+                LogToConsole("ERROR: Border Width must be a positive number in millimeters.");
+                return;
+            }
+
             int laserPower = FIXED_LASER_POWER;
             int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
 
             LogToConsole("----------------------------------");
             LogToConsole("Starting G-Code generation...");
-            LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Laser Power: {laserPower}, Mirror X: {mirrorX}");
+            LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Laser Power: {laserPower}, Mirror X: {mirrorX}, Border Width: {isolationWidthMm:0.###} mm");
 
             try
             {
-                int result = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX);
+                int result = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isolationWidthMm);
 
                 if (result == 1)
                 {

@@ -1,3 +1,7 @@
+use clipper2::{
+    EndType, JoinType, Path as ClipperPath, Paths as ClipperPaths, Point as ClipperPoint,
+    PointScaler,
+};
 use geo::BooleanOps;
 use geo::{LineString, MultiPolygon, Polygon, coord};
 use std::collections::HashMap;
@@ -5,6 +9,18 @@ use std::ffi::CStr;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::os::raw::c_char;
+
+const DEFAULT_TOOL_WIDTH_MM: f64 = 0.20;
+const DEFAULT_CLEARANCE_MM: f64 = 0.05;
+const DEFAULT_STEPOVER: f64 = 0.80;
+const FALLBACK_ISOLATION_WIDTH_MM: f64 = 0.60;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Hash)]
+struct Micro;
+
+impl PointScaler for Micro {
+    const MULTIPLIER: f64 = 1_000_000.0;
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ApertureShape {
@@ -95,6 +111,84 @@ fn aperture_to_polygons(x: f64, y: f64, aperture: &Aperture) -> MultiPolygon<f64
         )]),
         ApertureShape::Obround => create_obround(x, y, aperture.width, aperture.height),
     }
+}
+
+fn ring_to_clipper_path(ring: &LineString<f64>) -> ClipperPath<Micro> {
+    let mut points = Vec::new();
+    for (idx, c) in ring.coords().enumerate() {
+        if idx + 1 == ring.coords().count()
+            && points.first().is_some_and(|p: &ClipperPoint<Micro>| {
+                (p.x() - c.x).abs() < 0.000001 && (p.y() - c.y).abs() < 0.000001
+            })
+        {
+            continue;
+        }
+        points.push(ClipperPoint::<Micro>::new(c.x, c.y));
+    }
+    ClipperPath::new(points)
+}
+
+fn copper_area_to_clipper_paths(copper_area: &MultiPolygon<f64>) -> ClipperPaths<Micro> {
+    let mut paths = Vec::new();
+
+    for poly in copper_area.iter() {
+        paths.push(ring_to_clipper_path(poly.exterior()));
+
+        for interior in poly.interiors() {
+            paths.push(ring_to_clipper_path(interior));
+        }
+    }
+
+    ClipperPaths::new(paths)
+}
+
+fn clipper_paths_to_lines(paths: &ClipperPaths<Micro>) -> Vec<LineString<f64>> {
+    let mut lines = Vec::new();
+
+    for path in paths.iter() {
+        let mut coords = path
+            .iter()
+            .map(|point| coord! { x: point.x(), y: point.y() })
+            .collect::<Vec<_>>();
+
+        if coords.len() > 1 && coords.first() != coords.last() {
+            coords.push(coords[0]);
+        }
+
+        if coords.len() > 1 {
+            lines.push(LineString::new(coords));
+        }
+    }
+
+    lines
+}
+
+fn generate_isolation_paths(
+    copper_area: &MultiPolygon<f64>,
+    tool_width_mm: f64,
+    clearance_mm: f64,
+    isolation_width_mm: f64,
+    stepover: f64,
+) -> Vec<LineString<f64>> {
+    let copper_paths = copper_area_to_clipper_paths(copper_area);
+    if copper_paths.is_empty() {
+        return Vec::new();
+    }
+
+    let first_offset = clearance_mm + tool_width_mm / 2.0;
+    let offset_step = (tool_width_mm * stepover).max(tool_width_mm * 0.1);
+    let mut offset = first_offset;
+    let mut isolation_paths = Vec::new();
+
+    while offset <= isolation_width_mm + 0.000001 {
+        let offset_paths = copper_paths
+            .inflate(offset, JoinType::Round, EndType::Polygon, 2.0)
+            .simplify(0.001, false);
+        isolation_paths.extend(clipper_paths_to_lines(&offset_paths));
+        offset += offset_step;
+    }
+
+    isolation_paths
 }
 
 fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
@@ -199,6 +293,12 @@ impl CncState {
     }
 }
 
+impl Default for CncState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
     if let Some(start_idx) = line.find(prefix) {
         let rest_of_string = &line[start_idx + 1..];
@@ -212,12 +312,17 @@ fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn process_gerber_to_gcode(
+/// # Safety
+///
+/// `input_path_ptr` and `out_path_ptr` must be valid, non-null, null-terminated C strings
+/// for the duration of this call.
+pub unsafe extern "C" fn process_gerber_to_gcode(
     input_path_ptr: *const c_char,
     out_path_ptr: *const c_char,
     feed_rate: i32,
     laser_power: i32,
     mirror_x: i32,
+    isolation_width_mm: f64,
 ) -> i32 {
     if input_path_ptr.is_null() {
         return -1;
@@ -280,13 +385,13 @@ pub extern "C" fn process_gerber_to_gcode(
         }
 
         if line.starts_with("%FSLAX") {
-            if let Some(decimal_char) = line.chars().nth(7) {
-                if let Some(decimal_num) = decimal_char.to_digit(10_u32) {
-                    state.format_decimals = decimal_num as u8;
-                    state.scale_factor = f64::powi(10.0, state.format_decimals as i32);
+            if let Some(decimal_char) = line.chars().nth(7)
+                && let Some(decimal_num) = decimal_char.to_digit(10_u32)
+            {
+                state.format_decimals = decimal_num as u8;
+                state.scale_factor = f64::powi(10.0, state.format_decimals as i32);
 
-                    println!("Format decimals set to: {}", state.scale_factor);
-                }
+                println!("Format decimals set to: {}", state.scale_factor);
             }
             continue;
         }
@@ -444,11 +549,32 @@ pub extern "C" fn process_gerber_to_gcode(
         merged_area = merged_area.union(&poly_as_multi);
     }
 
+    println!(
+        "Polygon Merged complete. Total merged polygons: {}",
+        merged_area.0.len()
+    );
+
+    println!("Generating isolation offset toolpaths...");
+    let first_offset = DEFAULT_CLEARANCE_MM + DEFAULT_TOOL_WIDTH_MM / 2.0;
+    let requested_isolation_width = if isolation_width_mm.is_finite() && isolation_width_mm > 0.0 {
+        isolation_width_mm.max(first_offset)
+    } else {
+        FALLBACK_ISOLATION_WIDTH_MM
+    };
+
+    let isolation_paths = generate_isolation_paths(
+        &merged_area,
+        DEFAULT_TOOL_WIDTH_MM,
+        DEFAULT_CLEARANCE_MM,
+        requested_isolation_width,
+        DEFAULT_STEPOVER,
+    );
+
     let mut min_x = f64::MAX;
     let mut max_x = f64::MIN;
 
-    for poly in merged_area.iter() {
-        for c in poly.exterior().coords() {
+    for path in &isolation_paths {
+        for c in path.coords() {
             if c.x < min_x {
                 min_x = c.x;
             }
@@ -461,47 +587,20 @@ pub extern "C" fn process_gerber_to_gcode(
     let get_x = |x: f64| -> f64 { if mirror_x == 1 { max_x + min_x - x } else { x } };
 
     println!(
-        "Polygon Merged complete. Total merged polygons: {}",
-        merged_area.0.len()
+        "Start to generate Gcode from {} isolation paths using {:.4} mm isolation width...",
+        isolation_paths.len(),
+        requested_isolation_width
     );
-    println!("Start to generate Gcode from the merged polygons...");
 
-    for (i, poly) in merged_area.iter().enumerate() {
-        writeln!(out_file, "; Polygon {}", i + 1).unwrap();
+    for (path_idx, path) in isolation_paths.iter().enumerate() {
+        writeln!(out_file, "; Isolation Path {}", path_idx + 1).unwrap();
 
-        let exterior = poly.exterior();
-        for (i, c) in exterior.coords().enumerate() {
+        for (point_idx, c) in path.coords().enumerate() {
             let px = get_x(c.x);
-            if i == 0 {
+            if point_idx == 0 {
                 writeln!(out_file, "G0 X{:.4} Y{:.4} S0", px, c.y).unwrap();
             } else {
                 writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", px, c.y, laser_power).unwrap();
-            }
-        }
-
-        for interior in poly.interiors() {
-            writeln!(out_file, "; Clear the hole").unwrap();
-            for (pt_idx, coordinates) in interior.coords().enumerate() {
-                let px = get_x(coordinates.x);
-                if pt_idx == 0 {
-                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", px, coordinates.y).unwrap();
-                } else {
-                    writeln!(
-                        out_file,
-                        "G1 X{:.4} Y{:.4} S{}",
-                        px, coordinates.y, laser_power
-                    )
-                    .unwrap();
-
-        for interior in poly.interiors() {
-            writeln!(out_file, "; Clear the hole").unwrap();
-            for (pt_idx, coordinates) in interior.coords().enumerate() {
-                let px = get_x(coordinates.x);
-                if pt_idx == 0 {
-                    writeln!(out_file, "G0 X{:.4} Y{:.4} S0", px, coordinates.y).unwrap();
-                } else {
-                    writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", px, coordinates.y, laser_power).unwrap();
-                }
             }
         }
     }
