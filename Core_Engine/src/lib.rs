@@ -1,315 +1,23 @@
-use clipper2::{
-    EndType, JoinType, Path as ClipperPath, Paths as ClipperPaths, Point as ClipperPoint,
-    PointScaler,
-};
-use geo::BooleanOps;
-use geo::{LineString, MultiPolygon, Polygon, coord};
-use std::collections::HashMap;
+mod exporter;
+mod geometry;
+mod offset;
+mod parser;
+mod types;
+
+use crate::exporter::write_gcode;
+use crate::geometry::build_merged_copper_area;
+use crate::offset::generate_isolation_paths;
+use crate::parser::parse_gerber;
+use crate::types::CncState;
 use std::ffi::CStr;
 use std::fs::File;
-use std::io::{self, BufRead, Write};
+use std::io::BufReader;
 use std::os::raw::c_char;
 
 const DEFAULT_TOOL_WIDTH_MM: f64 = 0.20;
 const DEFAULT_CLEARANCE_MM: f64 = 0.05;
 const DEFAULT_STEPOVER: f64 = 0.80;
 const FALLBACK_ISOLATION_WIDTH_MM: f64 = 0.60;
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Hash)]
-struct Micro;
-
-impl PointScaler for Micro {
-    const MULTIPLIER: f64 = 1_000_000.0;
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ApertureShape {
-    Circle,
-    Rectangle,
-    Obround,
-}
-
-#[derive(Debug, Clone)]
-pub struct Aperture {
-    pub shape: ApertureShape,
-    pub width: f64,
-    pub height: f64,
-}
-
-#[derive(Debug)]
-pub struct SolderPad {
-    pub x: f64,
-    pub y: f64,
-    pub aperture: Aperture,
-}
-
-#[derive(Debug)]
-pub struct LineSegment {
-    pub start_x: f64,
-    pub start_y: f64,
-    pub end_x: f64,
-    pub end_y: f64,
-    pub thickness: f64,
-}
-
-fn create_circle(x: f64, y: f64, radius: f64) -> Polygon<f64> {
-    let mut points = vec![];
-    let sides = 64;
-    for i in 0..sides {
-        let angle = 2.0 * std::f64::consts::PI * (i as f64) / (sides as f64);
-        points.push(coord! {
-            x: x + radius * angle.cos(),
-            y: y + radius * angle.sin()
-        });
-    }
-    points.push(points[0]);
-    Polygon::new(LineString::new(points), vec![])
-}
-
-fn create_rectangle(x: f64, y: f64, width: f64, height: f64) -> Polygon<f64> {
-    let half_w = width / 2.0;
-    let half_h = height / 2.0;
-
-    let p1 = coord! { x: x - half_w, y: y - half_h };
-    let p2 = coord! { x: x + half_w, y: y - half_h };
-    let p3 = coord! { x: x + half_w, y: y + half_h };
-    let p4 = coord! { x: x - half_w, y: y + half_h };
-
-    Polygon::new(LineString::new(vec![p1, p2, p3, p4, p1]), vec![])
-}
-
-fn create_obround(x: f64, y: f64, width: f64, height: f64) -> MultiPolygon<f64> {
-    if (width - height).abs() < 0.0001 {
-        return MultiPolygon::new(vec![create_circle(x, y, width / 2.0)]);
-    }
-
-    if width > height {
-        let radius = height / 2.0;
-        let offset = (width - height) / 2.0;
-        let rect = MultiPolygon::new(vec![create_rectangle(x, y, width - height, height)]);
-        let left = MultiPolygon::new(vec![create_circle(x - offset, y, radius)]);
-        let right = MultiPolygon::new(vec![create_circle(x + offset, y, radius)]);
-        return rect.union(&left).union(&right);
-    }
-
-    let radius = width / 2.0;
-    let offset = (height - width) / 2.0;
-    let rect = MultiPolygon::new(vec![create_rectangle(x, y, width, height - width)]);
-    let bottom = MultiPolygon::new(vec![create_circle(x, y - offset, radius)]);
-    let top = MultiPolygon::new(vec![create_circle(x, y + offset, radius)]);
-    rect.union(&bottom).union(&top)
-}
-
-fn aperture_to_polygons(x: f64, y: f64, aperture: &Aperture) -> MultiPolygon<f64> {
-    match aperture.shape {
-        ApertureShape::Circle => MultiPolygon::new(vec![create_circle(x, y, aperture.width / 2.0)]),
-        ApertureShape::Rectangle => MultiPolygon::new(vec![create_rectangle(
-            x,
-            y,
-            aperture.width,
-            aperture.height,
-        )]),
-        ApertureShape::Obround => create_obround(x, y, aperture.width, aperture.height),
-    }
-}
-
-fn ring_to_clipper_path(ring: &LineString<f64>) -> ClipperPath<Micro> {
-    let mut points = Vec::new();
-    for (idx, c) in ring.coords().enumerate() {
-        if idx + 1 == ring.coords().count()
-            && points.first().is_some_and(|p: &ClipperPoint<Micro>| {
-                (p.x() - c.x).abs() < 0.000001 && (p.y() - c.y).abs() < 0.000001
-            })
-        {
-            continue;
-        }
-        points.push(ClipperPoint::<Micro>::new(c.x, c.y));
-    }
-    ClipperPath::new(points)
-}
-
-fn copper_area_to_clipper_paths(copper_area: &MultiPolygon<f64>) -> ClipperPaths<Micro> {
-    let mut paths = Vec::new();
-
-    for poly in copper_area.iter() {
-        paths.push(ring_to_clipper_path(poly.exterior()));
-
-        for interior in poly.interiors() {
-            paths.push(ring_to_clipper_path(interior));
-        }
-    }
-
-    ClipperPaths::new(paths)
-}
-
-fn clipper_paths_to_lines(paths: &ClipperPaths<Micro>) -> Vec<LineString<f64>> {
-    let mut lines = Vec::new();
-
-    for path in paths.iter() {
-        let mut coords = path
-            .iter()
-            .map(|point| coord! { x: point.x(), y: point.y() })
-            .collect::<Vec<_>>();
-
-        if coords.len() > 1 && coords.first() != coords.last() {
-            coords.push(coords[0]);
-        }
-
-        if coords.len() > 1 {
-            lines.push(LineString::new(coords));
-        }
-    }
-
-    lines
-}
-
-fn generate_isolation_paths(
-    copper_area: &MultiPolygon<f64>,
-    tool_width_mm: f64,
-    clearance_mm: f64,
-    isolation_width_mm: f64,
-    stepover: f64,
-) -> Vec<LineString<f64>> {
-    let copper_paths = copper_area_to_clipper_paths(copper_area);
-    if copper_paths.is_empty() {
-        return Vec::new();
-    }
-
-    let first_offset = clearance_mm + tool_width_mm / 2.0;
-    let offset_step = (tool_width_mm * stepover).max(tool_width_mm * 0.1);
-    let mut offset = first_offset;
-    let mut isolation_paths = Vec::new();
-
-    while offset <= isolation_width_mm + 0.000001 {
-        let offset_paths = copper_paths
-            .inflate(offset, JoinType::Round, EndType::Polygon, 2.0)
-            .simplify(0.001, false);
-        isolation_paths.extend(clipper_paths_to_lines(&offset_paths));
-        offset += offset_step;
-    }
-
-    isolation_paths
-}
-
-fn line_to_polygon(segment: &LineSegment) -> Polygon<f64> {
-    let dx = segment.end_x - segment.start_x;
-    let dy = segment.end_y - segment.start_y;
-    let length = (dx * dx + dy * dy).sqrt();
-
-    if length < 0.0001 {
-        let radius = segment.thickness / 2.0;
-        let mut points = vec![];
-        let sides = 8;
-
-        for i in 0..sides {
-            let angle = 2.0 * std::f64::consts::PI * (i as f64) / (sides as f64);
-            points.push(coord! {
-                x: segment.start_x + radius * angle.cos(),
-                y: segment.start_y + radius * angle.sin()
-            });
-        }
-        points.push(points[0]);
-
-        return Polygon::new(LineString::new(points), vec![]);
-    }
-
-    let nx = -dy / length;
-    let ny = dx / length;
-    let half_t = segment.thickness / 2.0;
-
-    let p1 = coord! {
-        x: segment.start_x + nx * half_t,
-        y: segment.start_y + ny * half_t
-    };
-
-    let p2 = coord! {
-        x: segment.start_x - nx * half_t,
-        y: segment.start_y - ny * half_t
-    };
-
-    let p3 = coord! {
-        x: segment.end_x - nx * half_t,
-        y: segment.end_y - ny * half_t
-    };
-
-    let p4 = coord! {
-        x: segment.end_x + nx * half_t,
-        y: segment.end_y + ny * half_t
-    };
-
-    Polygon::new(LineString::new(vec![p1, p2, p3, p4, p1]), vec![])
-}
-
-#[derive(Debug)]
-pub struct CncState {
-    pub current_x: f64,
-    pub current_y: f64,
-    pub is_laser_on: bool,
-    pub format_decimals: u8,
-    pub scale_factor: f64,
-    pub unit_scale_in_mm: f64,
-    pub apertures: HashMap<i32, Aperture>,
-    pub current_aperture: i32,
-    pub current_d_code: i32,
-    pub traces: Vec<LineSegment>,
-    pub pins: Vec<SolderPad>,
-}
-
-impl CncState {
-    pub fn new() -> Self {
-        CncState {
-            current_x: 0.0,
-            current_y: 0.0,
-            is_laser_on: false,
-            format_decimals: 6,
-            scale_factor: 1_000_000.0,
-            unit_scale_in_mm: 1.0,
-            apertures: HashMap::new(),
-            current_aperture: 0,
-            current_d_code: 2,
-            traces: Vec::new(),
-            pins: Vec::new(),
-        }
-    }
-
-    pub fn parse_coordinate(&self, raw_val: f64) -> f64 {
-        raw_val / self.scale_factor * self.unit_scale_in_mm
-    }
-
-    pub fn current_aperture(&self) -> Aperture {
-        self.apertures
-            .get(&self.current_aperture)
-            .cloned()
-            .unwrap_or(Aperture {
-                shape: ApertureShape::Circle,
-                width: 1.5,
-                height: 1.5,
-            })
-    }
-
-    pub fn current_thickeness(&self) -> f64 {
-        let aperture = self.current_aperture();
-        aperture.width.max(aperture.height)
-    }
-}
-
-impl Default for CncState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-fn extract_coordinates(line: &str, prefix: char) -> Option<f64> {
-    if let Some(start_idx) = line.find(prefix) {
-        let rest_of_string = &line[start_idx + 1..];
-        let end_idx = rest_of_string
-            .find(|c: char| !c.is_ascii_digit() && c != '-' && c != '+')
-            .unwrap_or(rest_of_string.len());
-        rest_of_string[..end_idx].parse::<f64>().ok()
-    } else {
-        None
-    }
-}
 
 #[unsafe(no_mangle)]
 /// # Safety
@@ -324,19 +32,17 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
     mirror_x: i32,
     isolation_width_mm: f64,
 ) -> i32 {
-    if input_path_ptr.is_null() {
+    if input_path_ptr.is_null() || out_path_ptr.is_null() {
         return -1;
     }
 
     let c_input = unsafe { CStr::from_ptr(input_path_ptr) };
-
     let input_path = match c_input.to_str() {
         Ok(s) => s,
         Err(_) => return -2,
     };
 
     let c_out = unsafe { CStr::from_ptr(out_path_ptr) };
-
     let out_path = match c_out.to_str() {
         Ok(s) => s,
         Err(_) => return -2,
@@ -346,7 +52,7 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
 
     let file = match File::open(input_path) {
         Ok(f) => f,
-        Err(_e) => {
+        Err(_) => {
             println!("Gtrace Core : Failed to open file - {}", input_path);
             return -3;
         }
@@ -357,200 +63,14 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
         Err(_) => return -4,
     };
 
-    writeln!(out_file, "; Generated by GTRACE Core Engine").unwrap();
-    writeln!(out_file, "G21 ; Set units to millimeters").unwrap();
-    writeln!(out_file, "G90 ; Absolute positioning").unwrap();
-    writeln!(out_file, "F{} ; Set feed rate", feed_rate).unwrap();
-
-    let reader = io::BufReader::new(file);
-
+    let reader = BufReader::new(file);
     let mut state = CncState::new();
-
-    println!("Start to prase the garber file :");
-
-    for line_result in reader.lines() {
-        let line = match line_result {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-
-        let line = line.trim();
-
-        if line.is_empty() {
-            continue;
-        }
-
-        if line.starts_with("G04") {
-            continue;
-        }
-
-        if line.starts_with("%FSLAX") {
-            if let Some(decimal_char) = line.chars().nth(7)
-                && let Some(decimal_num) = decimal_char.to_digit(10_u32)
-            {
-                state.format_decimals = decimal_num as u8;
-                state.scale_factor = f64::powi(10.0, state.format_decimals as i32);
-
-                println!("Format decimals set to: {}", state.scale_factor);
-            }
-            continue;
-        }
-
-        if line.starts_with("%MOMM") {
-            state.unit_scale_in_mm = 1.0;
-            continue;
-        }
-
-        if line.starts_with("%MOIN") {
-            state.unit_scale_in_mm = 25.4;
-            continue;
-        }
-
-        if line.starts_with("%ADD") {
-            println!("Parsing aperture definition: {}", line);
-
-            if let Some(comma_idx) = line.find(',') {
-                let prefix = &line[4..comma_idx];
-
-                let d_code_str: String = prefix.chars().filter(|c| c.is_ascii_digit()).collect();
-                let aperture_shape = match prefix.chars().find(|c| c.is_ascii_alphabetic()) {
-                    Some('C') | Some('c') => ApertureShape::Circle,
-                    Some('R') | Some('r') => ApertureShape::Rectangle,
-                    Some('O') | Some('o') => ApertureShape::Obround,
-                    _ => {
-                        println!("Unsupported aperture shape in: {}", line);
-                        continue;
-                    }
-                };
-
-                let star_idx = line.find('*').unwrap_or(line.len());
-                if star_idx > comma_idx {
-                    let params = line[comma_idx + 1..star_idx].to_uppercase();
-                    let mut size_parts = params.split('X').map(|part| part.trim());
-                    let width_str = size_parts.next().unwrap_or("0");
-                    let height_str = size_parts.next().unwrap_or(width_str);
-
-                    if let (Ok(d_code), Ok(width), Ok(height)) = (
-                        d_code_str.parse::<i32>(),
-                        width_str.parse::<f64>(),
-                        height_str.parse::<f64>(),
-                    ) {
-                        let width_mm = width * state.unit_scale_in_mm;
-                        let height_mm = height * state.unit_scale_in_mm;
-                        let aperture = Aperture {
-                            shape: aperture_shape,
-                            width: width_mm,
-                            height: height_mm,
-                        };
-
-                        state.apertures.insert(d_code, aperture);
-                        println!(
-                            "Complete aperture scan D{} = {:?} {} x {} mm",
-                            d_code, aperture_shape, width_mm, height_mm
-                        );
-                    } else {
-                        println!(
-                            "Cant parse the aperture definition D='{}', Width='{}', Height='{}'",
-                            d_code_str, width_str, height_str
-                        );
-                    }
-                }
-            }
-            continue;
-        }
-
-        if !line.starts_with('%') {
-            let old_x = state.current_x;
-            let old_y = state.current_y;
-            let has_x = extract_coordinates(line, 'X');
-            let has_y = extract_coordinates(line, 'Y');
-            let d_val = extract_coordinates(line, 'D');
-
-            if let Some(raw_x) = extract_coordinates(line, 'X') {
-                state.current_x = state.parse_coordinate(raw_x);
-            }
-            if let Some(raw_y) = extract_coordinates(line, 'Y') {
-                state.current_y = state.parse_coordinate(raw_y);
-            }
-
-            let mut should_execute = false;
-
-            if let Some(dv) = d_val {
-                let d_code = dv as i32;
-
-                if d_code >= 10 {
-                    state.current_aperture = d_code;
-                    if let Some(size) = state.apertures.get(&d_code) {
-                        println!(
-                            "Selected aperture D{} {:?} {} x {} mm",
-                            d_code, size.shape, size.width, size.height
-                        );
-                    }
-                } else {
-                    state.current_d_code = d_code;
-                    should_execute = true;
-                }
-            } else if has_x.is_some() || has_y.is_some() {
-                should_execute = true;
-            }
-
-            if should_execute {
-                if state.current_d_code == 1 {
-                    state.traces.push(LineSegment {
-                        start_x: old_x,
-                        start_y: old_y,
-                        end_x: state.current_x,
-                        end_y: state.current_y,
-                        thickness: state.current_thickeness(),
-                    });
-                } else if state.current_d_code == 3 {
-                    let pin_size = state.current_thickeness();
-                    let aperture = state.current_aperture();
-                    state.pins.push(SolderPad {
-                        x: state.current_x,
-                        y: state.current_y,
-                        aperture,
-                    });
-                    println!(
-                        "Added pin at X({:.3}, Y{:.3}) with diameter {:.4} mm",
-                        state.current_x, state.current_y, pin_size
-                    );
-                }
-            }
-        }
-    }
+    parse_gerber(reader, &mut state);
 
     println!("Generating Polygon data from line segments...");
-
-    let mut polygons: Vec<Polygon<f64>> = Vec::new();
-
-    for trace in &state.traces {
-        polygons.push(line_to_polygon(trace));
-
-        let r = trace.thickness / 2.0;
-        polygons.push(create_circle(trace.start_x, trace.start_y, r));
-        polygons.push(create_circle(trace.end_x, trace.end_y, r));
-    }
-
-    for pin in &state.pins {
-        for poly in aperture_to_polygons(pin.x, pin.y, &pin.aperture) {
-            polygons.push(poly);
-        }
-    }
-
-    println!("Converted Line Segments into Polygons: {}", polygons.len());
-
-    println!("Performing boolean union on polygons...");
-
-    let mut merged_area: MultiPolygon<f64> = MultiPolygon::new(vec![]);
-
-    for poly in polygons {
-        let poly_as_multi = MultiPolygon::new(vec![poly]);
-        merged_area = merged_area.union(&poly_as_multi);
-    }
-
+    let merged_area = build_merged_copper_area(&state);
     println!(
-        "Polygon Merged complete. Total merged polygons: {}",
+        "Polygon merged complete. Total merged polygons: {}",
         merged_area.0.len()
     );
 
@@ -570,43 +90,24 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
         DEFAULT_STEPOVER,
     );
 
-    let mut min_x = f64::MAX;
-    let mut max_x = f64::MIN;
-
-    for path in &isolation_paths {
-        for c in path.coords() {
-            if c.x < min_x {
-                min_x = c.x;
-            }
-            if c.x > max_x {
-                max_x = c.x;
-            }
-        }
-    }
-
-    let get_x = |x: f64| -> f64 { if mirror_x == 1 { max_x + min_x - x } else { x } };
-
     println!(
         "Start to generate Gcode from {} isolation paths using {:.4} mm isolation width...",
         isolation_paths.len(),
         requested_isolation_width
     );
 
-    for (path_idx, path) in isolation_paths.iter().enumerate() {
-        writeln!(out_file, "; Isolation Path {}", path_idx + 1).unwrap();
-
-        for (point_idx, c) in path.coords().enumerate() {
-            let px = get_x(c.x);
-            if point_idx == 0 {
-                writeln!(out_file, "G0 X{:.4} Y{:.4} S0", px, c.y).unwrap();
-            } else {
-                writeln!(out_file, "G1 X{:.4} Y{:.4} S{}", px, c.y, laser_power).unwrap();
-            }
-        }
+    if write_gcode(
+        &mut out_file,
+        &isolation_paths,
+        feed_rate,
+        laser_power,
+        mirror_x,
+    )
+    .is_err()
+    {
+        return -5;
     }
 
-    writeln!(out_file, "M5 ; Turn off laser").unwrap();
-    writeln!(out_file, "M2 ; End of program").unwrap();
     println!("Gtrace Core: Finished processing file - {}", out_path);
     println!("Finished Store the trace data {} line", state.traces.len());
     println!("Finished Store the pin data {} line", state.pins.len());
