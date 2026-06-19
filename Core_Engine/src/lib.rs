@@ -1,5 +1,6 @@
 mod exporter;
 mod geometry;
+mod json_exporter;
 mod offset;
 mod parser;
 mod types;
@@ -19,11 +20,14 @@ const DEFAULT_CLEARANCE_MM: f64 = 0.05;
 const DEFAULT_STEPOVER: f64 = 0.80;
 const FALLBACK_ISOLATION_WIDTH_MM: f64 = 0.60;
 
-#[unsafe(no_mangle)]
+/// Converts a Gerber file into G-code and returns preview JSON as an owned C string.
+///
 /// # Safety
 ///
-/// `input_path_ptr` and `out_path_ptr` must be valid, non-null, null-terminated C strings
-/// for the duration of this call.
+/// `input_path_ptr` and `out_path_ptr` must point to valid, non-null,
+/// null-terminated strings for the duration of this call. The returned pointer
+/// must be released by calling [`free_json_string`].
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_gerber_to_gcode(
     input_path_ptr: *const c_char,
     out_path_ptr: *const c_char,
@@ -31,21 +35,21 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
     laser_power: i32,
     mirror_x: i32,
     isolation_width_mm: f64,
-) -> i32 {
+) -> *mut c_char {
     if input_path_ptr.is_null() || out_path_ptr.is_null() {
-        return -1;
+        return std::ptr::null_mut();
     }
 
     let c_input = unsafe { CStr::from_ptr(input_path_ptr) };
     let input_path = match c_input.to_str() {
         Ok(s) => s,
-        Err(_) => return -2,
+        Err(_) => return std::ptr::null_mut(),
     };
 
     let c_out = unsafe { CStr::from_ptr(out_path_ptr) };
     let out_path = match c_out.to_str() {
         Ok(s) => s,
-        Err(_) => return -2,
+        Err(_) => return std::ptr::null_mut(),
     };
 
     println!("Gtrace Core : Computing File - {}", input_path);
@@ -54,13 +58,13 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
         Ok(f) => f,
         Err(_) => {
             println!("Gtrace Core : Failed to open file - {}", input_path);
-            return -3;
+            return std::ptr::null_mut();
         }
     };
 
     let mut out_file = match File::create(out_path) {
         Ok(f) => f,
-        Err(_) => return -4,
+        Err(_) => return std::ptr::null_mut(),
     };
 
     let reader = BufReader::new(file);
@@ -105,12 +109,19 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
     )
     .is_err()
     {
-        return -5;
+        return std::ptr::null_mut();
     }
 
     println!("Gtrace Core: Finished processing file - {}", out_path);
     println!("Finished Store the trace data {} line", state.traces.len());
     println!("Finished Store the pin data {} line", state.pins.len());
 
-    1
+    json_exporter::generate_json_preview(&merged_area, &isolation_paths)
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn free_json_string(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        let _ = unsafe { std::ffi::CString::from_raw(ptr) };
+    }
 }

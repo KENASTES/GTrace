@@ -17,7 +17,10 @@ namespace Front_End
     public partial class MainWindow : Window
     {
         [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        public static extern int process_gerber_to_gcode(string path_ptr, string output_path, int feed_rate, int laser_power, int mirror_x, double isolation_width_mm);
+        public static extern IntPtr process_gerber_to_gcode(string path_ptr, string output_path, int feed_rate, int laser_power, int mirror_x, double isolation_width_mm);
+
+        [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void free_json_string(IntPtr json_ptr);
 
         private string selectedFilePath = "";
         private string selectedOutputPath = "";
@@ -104,15 +107,26 @@ namespace Front_End
 
             try
             {
-                int result = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isolationWidthMm);
+                IntPtr previewJsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isolationWidthMm);
 
-                if (result == 1)
+                if (previewJsonPtr != IntPtr.Zero)
                 {
+                    string previewJson;
+                    try
+                    {
+                        previewJson = Marshal.PtrToStringUTF8(previewJsonPtr) ?? "";
+                    }
+                    finally
+                    {
+                        free_json_string(previewJsonPtr);
+                    }
+
                     LogToConsole("SUCCESS: Gerber processed successfully.");
+                    LogToConsole($"Preview data received: {previewJson.Length} characters.");
                 }
                 else
                 {
-                    LogToConsole($"ERROR: Core Engine returned code {result}");
+                    LogToConsole("ERROR: Core Engine failed to process the Gerber file.");
                 }
             }
             catch (Exception ex)
