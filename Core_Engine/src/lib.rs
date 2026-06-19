@@ -20,13 +20,6 @@ const DEFAULT_CLEARANCE_MM: f64 = 0.05;
 const DEFAULT_STEPOVER: f64 = 0.80;
 const FALLBACK_ISOLATION_WIDTH_MM: f64 = 0.60;
 
-/// Converts a Gerber file into G-code and returns preview JSON as an owned C string.
-///
-/// # Safety
-///
-/// `input_path_ptr` and `out_path_ptr` must point to valid, non-null,
-/// null-terminated strings for the duration of this call. The returned pointer
-/// must be released by calling [`free_json_string`].
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_gerber_to_gcode(
     input_path_ptr: *const c_char,
