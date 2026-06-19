@@ -10,7 +10,7 @@ namespace Front_End.Models
 
     public class PreviewData
     {
-        public List<List<Point2D>> copper_polygons { get; set; }
-        public List<List<Point2D>> toolpaths { get; set; }
+        public List<List<Point2D>> copper_polygons { get; set; } = new List<List<Point2D>>();
+        public List<List<Point2D>> toolpaths { get; set; } = new List<List<Point2D>>();
     }
 }

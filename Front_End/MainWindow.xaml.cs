@@ -1,4 +1,5 @@
-﻿using System;
+﻿#nullable enable  // 🌟 บรรทัดนี้สำคัญมาก! ช่วยแก้ Error เรื่องเครื่องหมาย ? ทั้งหมด
+using System;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -104,6 +105,7 @@ namespace Front_End
 
                 if (jsonPtr != IntPtr.Zero)
                 {
+                    // 🌟 ถ้าเคนใช้ .NET Framework รุ่นเก่าแล้ว Error ตรงนี้ ให้เปลี่ยนเป็น Marshal.PtrToStringAnsi(jsonPtr)
                     string jsonResult = Marshal.PtrToStringUTF8(jsonPtr) ?? "{}";
                     
                     free_json_string(jsonPtr);
@@ -152,6 +154,10 @@ namespace Front_End
                 {
                     if (poly.Count < 2) continue;
                     
+                    // 🌟 แก้ลอจิก Bounding Box ให้เก็บค่าพิกัดแรกด้วย
+                    minX = Math.Min(minX, poly[0].x); maxX = Math.Max(maxX, poly[0].x);
+                    minY = Math.Min(minY, poly[0].y); maxY = Math.Max(maxY, poly[0].y);
+
                     PathFigure figure = new PathFigure { StartPoint = new Point(poly[0].x, poly[0].y), IsClosed = true };
                     for (int i = 1; i < poly.Count; i++)
                     {
@@ -230,7 +236,6 @@ namespace Front_End
             Point mousePos = e.GetPosition(PreviewCanvas);
             double zoomFactor = e.Delta > 0 ? 1.2 : 1 / 1.2;
 
-            // ปรับแต่งขอบเขตระดับการซูมเพื่อความลื่นไหล
             if (CanvasScale.ScaleX * zoomFactor > 0.5 && CanvasScale.ScaleX * zoomFactor < 200)
             {
                 CanvasScale.ScaleX *= zoomFactor;
