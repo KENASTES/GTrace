@@ -65,7 +65,7 @@ namespace Front_End
             ConsoleLog.ScrollToEnd();
         }
 
-        private void GenerateButtonClick(object sender, RoutedEventArgs e)
+        private async void GenerateButtonClick(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(selectedFilePath))
             {
@@ -99,13 +99,16 @@ namespace Front_End
             LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Border Width: {isoWidth:0.###} mm, Mirror X: {mirrorX}");
 
             IntPtr jsonPtr = IntPtr.Zero;
+            GenerateButton.IsEnabled = false;
+            GenerateButton.Content = "PROCESSING...";
+            Mouse.OverrideCursor = Cursors.Wait;
+            
             try
             {
                 jsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isoWidth);
 
                 if (jsonPtr != IntPtr.Zero)
                 {
-                    // 🌟 ถ้าเคนใช้ .NET Framework รุ่นเก่าแล้ว Error ตรงนี้ ให้เปลี่ยนเป็น Marshal.PtrToStringAnsi(jsonPtr)
                     string jsonResult = Marshal.PtrToStringUTF8(jsonPtr) ?? "{}";
                     
                     free_json_string(jsonPtr);
@@ -154,7 +157,6 @@ namespace Front_End
                 {
                     if (poly.Count < 2) continue;
                     
-                    // 🌟 แก้ลอจิก Bounding Box ให้เก็บค่าพิกัดแรกด้วย
                     minX = Math.Min(minX, poly[0].x); maxX = Math.Max(maxX, poly[0].x);
                     minY = Math.Min(minY, poly[0].y); maxY = Math.Max(maxY, poly[0].y);
 
