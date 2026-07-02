@@ -65,7 +65,7 @@ namespace Front_End
             ConsoleLog.ScrollToEnd();
         }
 
-        private async void GenerateButtonClick(object sender, RoutedEventArgs e)
+        private void GenerateButtonClick(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(selectedFilePath))
             {
@@ -91,7 +91,7 @@ namespace Front_End
                 return;
             }
 
-            int laserPower = 215;
+            int laserPower = 200;
             int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
 
             LogToConsole("----------------------------------");
