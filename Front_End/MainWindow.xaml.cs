@@ -22,8 +22,9 @@ namespace Front_End
         public static extern void free_json_string(IntPtr ptr);
 
         private string selectedFilePath = "";
+        private string selectedImagePath = "";
         private string selectedOutputPath = "";
-        
+
         private Point lastMousePosition;
         private bool isPanning = false;
         private PreviewData? currentPreviewData = null;
@@ -53,7 +54,7 @@ namespace Front_End
             gridHost = new DrawingCanvasHost();
             copperHost = new DrawingCanvasHost();
             toolpathHost = new DrawingCanvasHost();
-            
+
             PreviewCanvas.Children.Add(gridHost);
             PreviewCanvas.Children.Add(copperHost);
             PreviewCanvas.Children.Add(toolpathHost);
@@ -63,6 +64,38 @@ namespace Front_End
         {
             ConsoleLog.AppendText($"\n> {message}");
             ConsoleLog.ScrollToEnd();
+        }
+
+        private void Mode_Checked(object sender, RoutedEventArgs e)
+        {
+            if (PanelPcbMode == null || PanelEngraveMode == null) return;
+
+            if (rbPcbMode.IsChecked == true)
+            {
+                PanelPcbMode.Visibility = Visibility.Visible;
+                PanelEngraveMode.Visibility = Visibility.Collapsed;
+                LogToConsole("Mode Switched: PCB Milling Mode");
+            }
+            else if (rbEngraveMode.IsChecked == true)
+            {
+                PanelPcbMode.Visibility = Visibility.Collapsed;
+                PanelEngraveMode.Visibility = Visibility.Visible;
+                LogToConsole("Mode Switched: Etching / Engraving Mode");
+            }
+        }
+
+        private void SelectImageButtonClick(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog openFileDialog = new OpenFileDialog 
+            { 
+                Filter = "Supported Files (*.png;*.dxf)|*.png;*.dxf|PNG Image (*.png)|*.png|DXF Vector (*.dxf)|*.dxf" 
+            };
+            if (openFileDialog.ShowDialog() == true)
+            {
+                selectedImagePath = openFileDialog.FileName;
+                SelectedImageText.Text = selectedImagePath;
+                LogToConsole($"Image/Vector selected: {selectedImagePath}");
+            }
         }
 
         private async void GenerateButtonClick(object sender, RoutedEventArgs e)
@@ -91,7 +124,33 @@ namespace Front_End
                 return;
             }
 
-            int laserPower = 215;
+            if (!int.TryParse(LaserPowerInput.Text, out int laserPower) || laserPower < 0)
+            {
+                LogToConsole("ERROR: Laser Power must be a valid positive integer.");
+                return;
+            }
+
+            if (rbPcbMode.IsChecked == true)
+            {
+                if (string.IsNullOrEmpty(selectedFilePath)) { LogToConsole("ERROR: No Gerber file selected."); return; }
+                
+            }
+            else if (rbEngraveMode.IsChecked == true)
+            {
+                if (string.IsNullOrEmpty(selectedImagePath)) { LogToConsole("ERROR: No PNG/DXF file selected."); return; }
+                if (!double.TryParse(ImageScaleInput.Text, out double imageScale) || imageScale <= 0)
+                {
+                    LogToConsole("ERROR: Scale width must be a valid positive number.");
+                    return;
+                }
+
+                int invertColors = chkInvertColors.IsChecked == true ? 1 : 0;
+                
+                LogToConsole($"Processing Etching Mode - Scale: {imageScale} mm");
+                
+                LogToConsole("WARNING: Etching Core Engine is under construction! 🚧");
+            }
+
             int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
 
             LogToConsole("----------------------------------");
@@ -116,7 +175,7 @@ namespace Front_End
                         if (jsonPtr != IntPtr.Zero)
                         {
                             string jsonResult = Marshal.PtrToStringUTF8(jsonPtr) ?? "{}";
-                            
+
                             free_json_string(jsonPtr);
                             jsonPtr = IntPtr.Zero;
 
@@ -166,7 +225,7 @@ namespace Front_End
 
             using (DrawingContext dc = copperHost.Visual.RenderOpen())
             {
-                Brush copperBrush = new SolidColorBrush(Color.FromRgb(24, 75, 41)); 
+                Brush copperBrush = new SolidColorBrush(Color.FromRgb(24, 75, 41));
                 Pen copperPen = new Pen(copperBrush, 0.02);
 
                 GeometryGroup group = new GeometryGroup();
@@ -175,7 +234,7 @@ namespace Front_End
                 foreach (var poly in currentPreviewData.copper_polygons)
                 {
                     if (poly.Count < 2) continue;
-                    
+
                     minX = Math.Min(minX, poly[0].x); maxX = Math.Max(maxX, poly[0].x);
                     minY = Math.Min(minY, poly[0].y); maxY = Math.Max(maxY, poly[0].y);
 
@@ -183,11 +242,11 @@ namespace Front_End
                     for (int i = 1; i < poly.Count; i++)
                     {
                         figure.Segments.Add(new LineSegment(new Point(poly[i].x, poly[i].y), true));
-                    
+
                         minX = Math.Min(minX, poly[i].x); maxX = Math.Max(maxX, poly[i].x);
                         minY = Math.Min(minY, poly[i].y); maxY = Math.Max(maxY, poly[i].y);
                     }
-                    
+
                     PathGeometry pathGeo = new PathGeometry();
                     pathGeo.Figures.Add(figure);
                     group.Children.Add(pathGeo);
@@ -197,7 +256,7 @@ namespace Front_End
 
             using (DrawingContext dc = toolpathHost.Visual.RenderOpen())
             {
-                Pen toolpathPen = new Pen(new SolidColorBrush(Color.FromRgb(0, 191, 255)), 0.15); 
+                Pen toolpathPen = new Pen(new SolidColorBrush(Color.FromRgb(0, 191, 255)), 0.15);
                 toolpathPen.StartLineCap = PenLineCap.Round;
                 toolpathPen.EndLineCap = PenLineCap.Round;
 
@@ -222,7 +281,7 @@ namespace Front_End
                 double widthMm = maxX - minX;
                 double heightMm = maxY - minY;
                 TxtBoardBounds.Text = $"Bounds: {widthMm:F2} x {heightMm:F2} mm";
-                
+
                 RenderGrid(minX, maxX, minY, maxY);
             }
         }
@@ -260,7 +319,7 @@ namespace Front_End
             if (CanvasScale.ScaleX * zoomFactor > 0.5 && CanvasScale.ScaleX * zoomFactor < 200)
             {
                 CanvasScale.ScaleX *= zoomFactor;
-                CanvasScale.ScaleY *= zoomFactor; 
+                CanvasScale.ScaleY *= zoomFactor;
                 CanvasTranslate.X = mousePos.X - (mousePos.X - CanvasTranslate.X) * zoomFactor;
                 CanvasTranslate.Y = mousePos.Y - (mousePos.Y - CanvasTranslate.Y) * zoomFactor;
             }
@@ -279,7 +338,7 @@ namespace Front_End
         private void Viewport_MouseMove(object sender, MouseEventArgs e)
         {
             Point currentPos = e.GetPosition(ViewportContainer);
-            
+
             if (isPanning)
             {
                 double deltaX = currentPos.X - lastMousePosition.X;
@@ -328,7 +387,7 @@ namespace Front_End
         }
 
         private void BtnFitToView_Click(object sender, RoutedEventArgs e) => AutoFitView();
-        
+
         private void SelectFileButtonClick(object sender, RoutedEventArgs e)
         {
             OpenFileDialog openFileDialog = new OpenFileDialog { Filter = "Gerber files (*.GBL;*.GBR)|*.GBL;*.GBR|All files (*.*)|*.*" };
