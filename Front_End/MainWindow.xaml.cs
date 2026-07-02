@@ -65,7 +65,7 @@ namespace Front_End
             ConsoleLog.ScrollToEnd();
         }
 
-        private void GenerateButtonClick(object sender, RoutedEventArgs e)
+        private async void GenerateButtonClick(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrEmpty(selectedFilePath))
             {
@@ -91,50 +91,69 @@ namespace Front_End
                 return;
             }
 
-            int laserPower = 200;
+            int laserPower = 215;
             int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
 
             LogToConsole("----------------------------------");
             LogToConsole("Processing Gerber & Fetching Geometry for Preview...");
             LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Border Width: {isoWidth:0.###} mm, Mirror X: {mirrorX}");
 
-            IntPtr jsonPtr = IntPtr.Zero;
             GenerateButton.IsEnabled = false;
             GenerateButton.Content = "PROCESSING...";
             Mouse.OverrideCursor = Cursors.Wait;
-            
+
             try
             {
-                jsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isoWidth);
+                PreviewData? parsedData = null;
 
-                if (jsonPtr != IntPtr.Zero)
+                await Task.Run(() =>
                 {
-                    string jsonResult = Marshal.PtrToStringUTF8(jsonPtr) ?? "{}";
-                    
-                    free_json_string(jsonPtr);
-                    jsonPtr = IntPtr.Zero;
-
-                    currentPreviewData = JsonSerializer.Deserialize<PreviewData>(jsonResult);
-                    
-                    if (currentPreviewData != null)
+                    IntPtr jsonPtr = IntPtr.Zero;
+                    try
                     {
-                        LogToConsole("SUCCESS: Data received. Rendering Preview Content...");
-                        RenderPcbPreview();
-                        AutoFitView();
+                        jsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isoWidth);
+
+                        if (jsonPtr != IntPtr.Zero)
+                        {
+                            string jsonResult = Marshal.PtrToStringUTF8(jsonPtr) ?? "{}";
+                            
+                            free_json_string(jsonPtr);
+                            jsonPtr = IntPtr.Zero;
+
+                            parsedData = JsonSerializer.Deserialize<PreviewData>(jsonResult);
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.Invoke(() => LogToConsole($"EXCEPTION: Error in background task -> {ex.Message}"));
+                    }
+                    finally
+                    {
+                        if (jsonPtr != IntPtr.Zero) free_json_string(jsonPtr);
+                    }
+                });
+
+                if (parsedData != null)
+                {
+                    currentPreviewData = parsedData;
+                    LogToConsole("SUCCESS: Data received. Rendering Preview Content...");
+                    RenderPcbPreview();
+                    AutoFitView();
                 }
                 else
                 {
-                    LogToConsole("ERROR: Core Engine returned null pointer.");
+                    LogToConsole("ERROR: Core Engine returned null pointer or failed.");
                 }
             }
             catch (Exception ex)
             {
-                LogToConsole($"EXCEPTION: Error parsing output JSON -> {ex.Message}");
+                LogToConsole($"EXCEPTION: {ex.Message}");
             }
             finally
             {
-                if (jsonPtr != IntPtr.Zero) free_json_string(jsonPtr);
+                GenerateButton.IsEnabled = true;
+                GenerateButton.Content = "GENERATE G-CODE";
+                Mouse.OverrideCursor = null;
             }
         }
 
