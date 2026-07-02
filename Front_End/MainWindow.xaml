@@ -77,56 +77,56 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0"
-                                Margin="0,0,15,0">
+                            Margin="0,0,15,0">
                         <TextBlock Text="GTRACE"
-                                        FontSize="28"
-                                        FontWeight="Black"
-                                        Foreground="#333"
-                                        Margin="0,0,0,5"/>
+                                   FontSize="28"
+                                   FontWeight="Black"
+                                   Foreground="#333"
+                                   Margin="0,0,0,5"/>
                         <TextBlock Text="CNC CAM &amp; G-Code Generator"
-                                        FontSize="14"
-                                        Foreground="#666"
-                                        Margin="0,0,0,20"/>
+                                   FontSize="14"
+                                   Foreground="#666"
+                                   Margin="0,0,0,20"/>
 
                         <TextBlock Text="Operation Mode"
-                                        FontWeight="SemiBold"
-                                        Margin="0,0,0,5"/>
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
                         <Border BorderBrush="#DDD"
-                                        BorderThickness="1"
-                                        CornerRadius="5"
-                                        Padding="10"
-                                        Margin="0,0,0,15"
-                                        Background="White">
+                                BorderThickness="1"
+                                CornerRadius="5"
+                                Padding="10"
+                                Margin="0,0,0,15"
+                                Background="White">
                                 <StackPanel>
                                         <RadioButton Name="rbPcbMode"
-                                                        Content="PCB Milling (Gerber)"
-                                                        IsChecked="True"
-                                                        Checked="Mode_Checked"
-                                                        FontSize="13"
-                                                        FontWeight="SemiBold"
-                                                        Margin="0,0,0,10"/>
+                                                     Content="PCB Milling (Gerber)"
+                                                     IsChecked="True"
+                                                     Checked="Mode_Checked"
+                                                     FontSize="13"
+                                                     FontWeight="SemiBold"
+                                                     Margin="0,0,0,10"/>
                                         <RadioButton Name="rbEngraveMode"
-                                                        Content="Etching / Engraving (PNG/DXF)"
-                                                        Checked="Mode_Checked"
-                                                        FontSize="13"
-                                                        FontWeight="SemiBold"/>
+                                                     Content="Etching / Engraving (PNG/DXF)"
+                                                     Checked="Mode_Checked"
+                                                     FontSize="13"
+                                                     FontWeight="SemiBold"/>
                                 </StackPanel>
                         </Border>
 
                         <StackPanel Name="PanelPcbMode">
                                 <TextBlock Text="Input Gerber File"
-                                                FontWeight="SemiBold"
-                                                Margin="0,0,0,5"/>
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,5"/>
                                 <Button Name="SelectFileButton"
-                                                Content="Browse a Gerber File"
-                                                Height="35"
-                                                Click="SelectFileButtonClick"/>
+                                        Content="Browse a Gerber File"
+                                        Height="35"
+                                        Click="SelectFileButtonClick"/>
                                 <TextBlock Name="SelectedFileText"
-                                                Text="No file selected"
-                                                FontSize="11"
-                                                Foreground="Gray"
-                                                TextWrapping="Wrap"
-                                                Margin="0,5,0,15"/>
+                                           Text="No file selected"
+                                           FontSize="11"
+                                           Foreground="Gray"
+                                           TextWrapping="Wrap"
+                                           Margin="0,5,0,15"/>
 
                                 <Grid Margin="0,0,0,10">
                                         <Grid.ColumnDefinitions>
@@ -134,17 +134,17 @@
                                                 <ColumnDefinition Width="80"/>
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="Border Width (mm):"
-                                                        VerticalAlignment="Center"/>
+                                                   VerticalAlignment="Center"/>
                                         <TextBox Name="IsolationWidthInput"
-                                                        Grid.Column="1"
-                                                        Text="0.60"
-                                                        Height="25"
-                                                        VerticalContentAlignment="Center"
-                                                        Padding="5,0"/>
+                                                 Grid.Column="1"
+                                                 Text="0.60"
+                                                 Height="25"
+                                                 VerticalContentAlignment="Center"
+                                                 Padding="5,0"/>
                                 </Grid>
                                 <CheckBox Name="chkMirrorX"
-                                                Content="Mirror X-Axis (Bottom Layer)"
-                                                Style="{StaticResource ModernCheckBox}"/>
+                                          Content="Mirror X-Axis (Bottom Layer)"
+                                          Style="{StaticResource ModernCheckBox}"/>
                         </StackPanel>
 
                         <StackPanel Name="PanelEngraveMode"
@@ -156,8 +156,8 @@
                                                 Content="Browse PNG / DXF"
                                                 Height="35"
                                                 Click="SelectImageButtonClick"
-                                                Background="#FF6B6B"
-                                                Foreground="White"/>
+                                                Background="#E0E0E0"
+                                                Foreground="Black"/>
                                 <TextBlock Name="SelectedImageText"
                                                 Text="No image selected"
                                                 FontSize="11"
@@ -170,36 +170,51 @@
                                                 <ColumnDefinition Width="*"/>
                                                 <ColumnDefinition Width="80"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="Scale / Width (mm):"
+                                        <TextBlock Text="Target Width (mm):"
                                                         VerticalAlignment="Center"/>
-                                        <TextBox Name="ImageScaleInput"
+                                        <TextBox Name="ImageWidthInput"
                                                         Grid.Column="1"
                                                         Text="50.0"
                                                         Height="25"
                                                         VerticalContentAlignment="Center"
                                                         Padding="5,0"/>
                                 </Grid>
+                                <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="80"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Target Height (mm):"
+                                                        VerticalAlignment="Center"/>
+                                        <TextBox Name="ImageHeightInput"
+                                                        Grid.Column="1"
+                                                        Text="50.0"
+                                                        Height="25"
+                                                        VerticalContentAlignment="Center"
+                                                        Padding="5,0"/>
+                                </Grid>
+
                                 <CheckBox Name="chkInvertColors"
                                                 Content="Invert Colors (Dark as Copper)"
                                                 Style="{StaticResource ModernCheckBox}"/>
                         </StackPanel>
 
                         <TextBlock Text="General Settings"
-                                        FontWeight="SemiBold"
-                                        Margin="0,10,0,5"/>
+                                   FontWeight="SemiBold"
+                                   Margin="0,10,0,5"/>
                         <Grid Margin="0,0,0,10">
                                 <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="80"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Feed Rate (mm/min):"
-                                                VerticalAlignment="Center"/>
+                                           VerticalAlignment="Center"/>
                                 <TextBox Name="FeedRateInput"
-                                                Grid.Column="1"
-                                                Text="800"
-                                                Height="25"
-                                                VerticalContentAlignment="Center"
-                                                Padding="5,0"/>
+                                         Grid.Column="1"
+                                         Text="800"
+                                         Height="25"
+                                         VerticalContentAlignment="Center"
+                                         Padding="5,0"/>
                         </Grid>
                         <Grid Margin="0,0,0,15">
                                 <Grid.ColumnDefinitions>
@@ -207,43 +222,43 @@
                                         <ColumnDefinition Width="80"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="Laser Power (S-Value):"
-                                                VerticalAlignment="Center"/>
+                                           VerticalAlignment="Center"/>
                                 <TextBox Name="LaserPowerInput"
-                                                Grid.Column="1"
-                                                Text="215"
-                                                Height="25"
-                                                VerticalContentAlignment="Center"
-                                                Padding="5,0"/>
+                                         Grid.Column="1"
+                                         Text="215"
+                                         Height="25"
+                                         VerticalContentAlignment="Center"
+                                         Padding="5,0"/>
                         </Grid>
 
                         <TextBlock Text="Output G-Code File"
-                                        FontWeight="SemiBold"
-                                        Margin="0,0,0,5"/>
+                                   FontWeight="SemiBold"
+                                   Margin="0,0,0,5"/>
                         <Grid Margin="0,0,0,15">
                                 <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBox Name="OutputFilePathText"
-                                                Text="No path selected"
-                                                IsReadOnly="True"
-                                                Background="#E0E0E0"
-                                                Padding="5"/>
+                                         Text="No path selected"
+                                         IsReadOnly="True"
+                                         Background="#E0E0E0"
+                                         Padding="5"/>
                                 <Button Name="SaveFileButton"
-                                                Grid.Column="1"
-                                                Content="Save As..."
-                                                Width="80"
-                                                Margin="10,0,0,0"
-                                                Click="SaveFileButtonClick"/>
+                                        Grid.Column="1"
+                                        Content="Save As..."
+                                        Width="80"
+                                        Margin="10,0,0,0"
+                                        Click="SaveFileButtonClick"/>
                         </Grid>
 
                         <Button Name="GenerateButton"
-                                        Content="GENERATE G-CODE"
-                                        Height="45"
-                                        Background="#007ACC"
-                                        Foreground="White"
-                                        FontWeight="Bold"
-                                        FontSize="14"/>
+                                Content="GENERATE G-CODE"
+                                Height="45"
+                                Background="#007ACC"
+                                Foreground="White"
+                                FontWeight="Bold"
+                                FontSize="14"/>
                 </StackPanel>
 
                 <Grid Grid.Column="1">

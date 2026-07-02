@@ -1,4 +1,4 @@
-﻿#nullable enable  // 🌟 บรรทัดนี้สำคัญมาก! ช่วยแก้ Error เรื่องเครื่องหมาย ? ทั้งหมด
+﻿#nullable enable
 using System;
 using System.Text;
 using System.Windows;
@@ -15,12 +15,20 @@ namespace Front_End
 {
     public partial class MainWindow : Window
     {
-        [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        public static extern IntPtr process_gerber_to_gcode(string path_ptr, string output_path, int feed_rate, int laser_power, int mirror_x, double isolation_width_mm);
+        [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr process_gerber_to_gcode(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string path_ptr, 
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string output_path, 
+            int feed_rate, int laser_power, int mirror_x, double isolation_width_mm);
 
         [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern void free_json_string(IntPtr ptr);
 
+        [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl)]
+        public static extern int process_engraving_to_gcode(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string path_ptr, 
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string output_path, 
+            int feed_rate, int laser_power, double target_width_mm, double target_height_mm, int invert_colors);
         private string selectedFilePath = "";
         private string selectedImagePath = "";
         private string selectedOutputPath = "";
@@ -86,9 +94,9 @@ namespace Front_End
 
         private void SelectImageButtonClick(object sender, RoutedEventArgs e)
         {
-            OpenFileDialog openFileDialog = new OpenFileDialog 
-            { 
-                Filter = "Supported Files (*.png;*.dxf)|*.png;*.dxf|PNG Image (*.png)|*.png|DXF Vector (*.dxf)|*.dxf" 
+            OpenFileDialog openFileDialog = new OpenFileDialog
+            {
+                Filter = "Supported Files (*.png;*.dxf)|*.png;*.dxf|PNG Image (*.png)|*.png|DXF Vector (*.dxf)|*.dxf"
             };
             if (openFileDialog.ShowDialog() == true)
             {
@@ -100,12 +108,6 @@ namespace Front_End
 
         private async void GenerateButtonClick(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(selectedFilePath))
-            {
-                LogToConsole("ERROR: No file selected to convert.");
-                return;
-            }
-
             if (string.IsNullOrEmpty(selectedOutputPath))
             {
                 LogToConsole("ERROR: No output path selected.");
@@ -118,12 +120,6 @@ namespace Front_End
                 return;
             }
 
-            if (!double.TryParse(IsolationWidthInput.Text, out double isoWidth) || isoWidth <= 0)
-            {
-                LogToConsole("ERROR: Border Width must be a positive number in millimeters.");
-                return;
-            }
-
             if (!int.TryParse(LaserPowerInput.Text, out int laserPower) || laserPower < 0)
             {
                 LogToConsole("ERROR: Laser Power must be a valid positive integer.");
@@ -133,86 +129,138 @@ namespace Front_End
             if (rbPcbMode.IsChecked == true)
             {
                 if (string.IsNullOrEmpty(selectedFilePath)) { LogToConsole("ERROR: No Gerber file selected."); return; }
-                
+
+                if (!double.TryParse(IsolationWidthInput.Text, out double isoWidth) || isoWidth <= 0)
+                {
+                    LogToConsole("ERROR: Border Width must be a positive number in millimeters.");
+                    return;
+                }
+
+                int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
+
+                LogToConsole("----------------------------------");
+                LogToConsole("Processing Gerber & Fetching Geometry for Preview...");
+                LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Border Width: {isoWidth:0.###} mm, Mirror X: {mirrorX}");
+
+                GenerateButton.IsEnabled = false;
+                GenerateButton.Content = "PROCESSING...";
+                Mouse.OverrideCursor = Cursors.Wait;
+
+                try
+                {
+                    PreviewData? parsedData = null;
+
+                    await Task.Run(() =>
+                    {
+                        IntPtr jsonPtr = IntPtr.Zero;
+                        try
+                        {
+                            jsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isoWidth);
+
+                            if (jsonPtr != IntPtr.Zero)
+                            {
+                                string jsonResult = Marshal.PtrToStringUTF8(jsonPtr) ?? "{}";
+                                free_json_string(jsonPtr);
+                                jsonPtr = IntPtr.Zero;
+                                parsedData = JsonSerializer.Deserialize<PreviewData>(jsonResult);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Dispatcher.Invoke(() => LogToConsole($"EXCEPTION: Error in background task -> {ex.Message}"));
+                        }
+                        finally
+                        {
+                            if (jsonPtr != IntPtr.Zero) free_json_string(jsonPtr);
+                        }
+                    });
+
+                    if (parsedData != null)
+                    {
+                        currentPreviewData = parsedData;
+                        LogToConsole("SUCCESS: Data received. Rendering Preview Content...");
+                        RenderPcbPreview();
+                        AutoFitView();
+                    }
+                    else
+                    {
+                        LogToConsole("ERROR: Core Engine returned null pointer or failed.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogToConsole($"EXCEPTION: {ex.Message}");
+                }
+                finally
+                {
+                    GenerateButton.IsEnabled = true;
+                    GenerateButton.Content = "GENERATE G-CODE";
+                    Mouse.OverrideCursor = null;
+                }
             }
             else if (rbEngraveMode.IsChecked == true)
             {
                 if (string.IsNullOrEmpty(selectedImagePath)) { LogToConsole("ERROR: No PNG/DXF file selected."); return; }
-                if (!double.TryParse(ImageScaleInput.Text, out double imageScale) || imageScale <= 0)
+
+                if (!double.TryParse(ImageWidthInput.Text, out double imageWidth) || imageWidth <= 0)
                 {
-                    LogToConsole("ERROR: Scale width must be a valid positive number.");
+                    LogToConsole("ERROR: Target Width must be a valid positive number.");
+                    return;
+                }
+
+                if (!double.TryParse(ImageHeightInput.Text, out double imageHeight) || imageHeight <= 0)
+                {
+                    LogToConsole("ERROR: Target Height must be a valid positive number.");
                     return;
                 }
 
                 int invertColors = chkInvertColors.IsChecked == true ? 1 : 0;
-                
-                LogToConsole($"Processing Etching Mode - Scale: {imageScale} mm");
-                
-                LogToConsole("WARNING: Etching Core Engine is under construction! 🚧");
-            }
 
-            int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
+                LogToConsole("----------------------------------");
+                LogToConsole($"Processing Etching Mode - Width: {imageWidth} mm, Height: {imageHeight} mm");
+                LogToConsole("Generating raster G-Code, this might take a moment depending on image size...");
 
-            LogToConsole("----------------------------------");
-            LogToConsole("Processing Gerber & Fetching Geometry for Preview...");
-            LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Border Width: {isoWidth:0.###} mm, Mirror X: {mirrorX}");
+                GenerateButton.IsEnabled = false;
+                GenerateButton.Content = "PROCESSING...";
+                Mouse.OverrideCursor = Cursors.Wait;
 
-            GenerateButton.IsEnabled = false;
-            GenerateButton.Content = "PROCESSING...";
-            Mouse.OverrideCursor = Cursors.Wait;
-
-            try
-            {
-                PreviewData? parsedData = null;
-
-                await Task.Run(() =>
+                try
                 {
-                    IntPtr jsonPtr = IntPtr.Zero;
-                    try
-                    {
-                        jsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isoWidth);
+                    int statusCode = 0;
 
-                        if (jsonPtr != IntPtr.Zero)
+                    await Task.Run(() =>
+                    {
+                        statusCode = process_engraving_to_gcode(selectedImagePath, selectedOutputPath, feedRate, laserPower, imageWidth, imageHeight, invertColors);
+                    });
+
+                    if (statusCode == 1)
+                    {
+                        LogToConsole("SUCCESS: Etching G-Code generated successfully!");
+                    }
+                    else
+                    {
+                        string errorMsg = statusCode switch
                         {
-                            string jsonResult = Marshal.PtrToStringUTF8(jsonPtr) ?? "{}";
-
-                            free_json_string(jsonPtr);
-                            jsonPtr = IntPtr.Zero;
-
-                            parsedData = JsonSerializer.Deserialize<PreviewData>(jsonResult);
-                        }
+                            -1 => "Input or Output path is null.",
+                            -2 => "Failed to read string from path pointer.",
+                            -4 => "Failed to create output G-Code file.",
+                            -5 => "Failed to process PNG image (Invalid data or format).",
+                            -6 => "Format not supported yet (Only .png is supported).",
+                            _ => "Unknown Error."
+                        };
+                        LogToConsole($"ERROR: Core Engine failed. Code {statusCode} -> {errorMsg}");
                     }
-                    catch (Exception ex)
-                    {
-                        Dispatcher.Invoke(() => LogToConsole($"EXCEPTION: Error in background task -> {ex.Message}"));
-                    }
-                    finally
-                    {
-                        if (jsonPtr != IntPtr.Zero) free_json_string(jsonPtr);
-                    }
-                });
-
-                if (parsedData != null)
-                {
-                    currentPreviewData = parsedData;
-                    LogToConsole("SUCCESS: Data received. Rendering Preview Content...");
-                    RenderPcbPreview();
-                    AutoFitView();
                 }
-                else
+                catch (Exception ex)
                 {
-                    LogToConsole("ERROR: Core Engine returned null pointer or failed.");
+                    LogToConsole($"EXCEPTION: {ex.Message}");
                 }
-            }
-            catch (Exception ex)
-            {
-                LogToConsole($"EXCEPTION: {ex.Message}");
-            }
-            finally
-            {
-                GenerateButton.IsEnabled = true;
-                GenerateButton.Content = "GENERATE G-CODE";
-                Mouse.OverrideCursor = null;
+                finally
+                {
+                    GenerateButton.IsEnabled = true;
+                    GenerateButton.Content = "GENERATE G-CODE";
+                    Mouse.OverrideCursor = null;
+                }
             }
         }
 
