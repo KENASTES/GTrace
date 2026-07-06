@@ -2,7 +2,7 @@
 
 A high-performance, minimalist desktop application designed to convert standard Gerber files (.GBL/.GBR) into ready-to-machine G-Code for custom PCB laser engraving.
 
-![GTrace UI](./Picture/Gtrace_First_Version_Pic.png)
+![GTrace UI](./Picture/Gtrace_Preview.png)
 
 ## Core Features
 

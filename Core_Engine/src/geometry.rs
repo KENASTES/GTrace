@@ -55,12 +55,7 @@ fn create_obround(x: f64, y: f64, width: f64, height: f64) -> MultiPolygon<f64> 
 fn aperture_to_polygons(x: f64, y: f64, aperture: &Aperture) -> MultiPolygon<f64> {
     match aperture.shape {
         ApertureShape::Circle => MultiPolygon::new(vec![create_circle(x, y, aperture.width / 2.0)]),
-        ApertureShape::Rectangle => MultiPolygon::new(vec![create_rectangle(
-            x,
-            y,
-            aperture.width,
-            aperture.height,
-        )]),
+        ApertureShape::Rectangle => MultiPolygon::new(vec![create_rectangle(x, y, aperture.width, aperture.height)]),
         ApertureShape::Obround => create_obround(x, y, aperture.width, aperture.height),
     }
 }
