@@ -14,6 +14,7 @@ pub fn write_gcode<W: Write>(
     writeln!(writer, "G54 ; Set work coordinate system")?;
     writeln!(writer, "G90 ; Absolute positioning")?;
     writeln!(writer, "F{} ; Set feed rate", feed_rate)?;
+    writeln!(writer, "M03 ; Turn on laser")?;
 
     let mut min_x = f64::MAX;
     let mut max_x = f64::MIN;
