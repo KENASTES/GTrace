@@ -34,8 +34,6 @@ ehthumbs_vista.db
 .DS_Store
 
 *.log
-*.gcode
-*.nc
 *.tap
 
 Front_End/core_engine.dll
