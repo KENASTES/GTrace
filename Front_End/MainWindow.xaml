@@ -95,18 +95,18 @@
                                 BorderThickness="1"
                                 CornerRadius="5"
                                 Padding="10"
-                                Margin="0,0,0,15"
+                                Margin="0,0,0,20"
                                 Background="White">
                                 <StackPanel>
                                         <RadioButton Name="rbPcbMode"
-                                                     Content="PCB Milling (Gerber)"
+                                                     Content="Gerber Converter (PCB Etching Mode)"
                                                      IsChecked="True"
                                                      Checked="Mode_Checked"
                                                      FontSize="13"
                                                      FontWeight="SemiBold"
                                                      Margin="0,0,0,10"/>
                                         <RadioButton Name="rbEngraveMode"
-                                                     Content="Etching / Engraving (PNG/DXF)"
+                                                     Content="Image Converter (Engraving Mode)"
                                                      Checked="Mode_Checked"
                                                      FontSize="13"
                                                      FontWeight="SemiBold"/>
@@ -114,7 +114,7 @@
                         </Border>
 
                         <StackPanel Name="PanelPcbMode">
-                                <TextBlock Text="Input Gerber File"
+                                <TextBlock Text="Input File"
                                            FontWeight="SemiBold"
                                            Margin="0,0,0,5"/>
                                 <Button Name="SelectFileButton"
@@ -149,7 +149,7 @@
 
                         <StackPanel Name="PanelEngraveMode"
                                         Visibility="Collapsed">
-                                <TextBlock Text="Input Image / DXF File"
+                                <TextBlock Text="Input File"
                                                 FontWeight="SemiBold"
                                                 Margin="0,0,0,5"/>
                                 <Button Name="SelectImageButton"

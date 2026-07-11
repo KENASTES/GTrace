@@ -82,7 +82,7 @@ namespace Front_End
             {
                 PanelPcbMode.Visibility = Visibility.Visible;
                 PanelEngraveMode.Visibility = Visibility.Collapsed;
-                LogToConsole("Mode Switched: PCB Milling Mode");
+                LogToConsole("Mode Switched: Gerber Converting Mode");
             }
             else if (rbEngraveMode.IsChecked == true)
             {

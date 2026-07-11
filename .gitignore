@@ -30,10 +30,12 @@ ehthumbs_vista.db
 *.zip
 *.rar
 
+
 .DS_Store
 
 *.log
 *.nc
+*.gcode
 *.tap
 
 Front_End/core_engine.dll
