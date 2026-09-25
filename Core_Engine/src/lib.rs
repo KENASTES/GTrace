@@ -1,17 +1,17 @@
+mod engraving;
 mod exporter;
 mod geometry;
 mod json_exporter;
 mod offset;
 mod parser;
 mod types;
-mod engraving;
 
+use crate::engraving::process_png_to_gcode;
 use crate::exporter::write_gcode;
 use crate::geometry::build_merged_copper_area;
 use crate::offset::generate_isolation_paths;
 use crate::parser::parse_gerber;
 use crate::types::CncState;
-use crate::engraving::process_png_to_gcode;
 use std::ffi::CStr;
 use std::fs::File;
 use std::io::BufReader;
@@ -22,6 +22,12 @@ const DEFAULT_CLEARANCE_MM: f64 = 0.05;
 const DEFAULT_STEPOVER: f64 = 0.80;
 const FALLBACK_ISOLATION_WIDTH_MM: f64 = 0.60;
 
+/// Converts a Gerber file into G-code and returns a heap-allocated JSON preview string.
+///
+/// # Safety
+///
+/// `input_path_ptr` and `out_path_ptr` must be valid, non-null, null-terminated UTF-8 strings.
+/// The returned pointer must be released by calling [`free_json_string`] exactly once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_gerber_to_gcode(
     input_path_ptr: *const c_char,
@@ -29,6 +35,7 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
     feed_rate: i32,
     laser_power: i32,
     mirror_x: i32,
+    mirror_y: i32,
     isolation_width_mm: f64,
 ) -> *mut c_char {
     if input_path_ptr.is_null() || out_path_ptr.is_null() {
@@ -101,6 +108,7 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
         feed_rate,
         laser_power,
         mirror_x,
+        mirror_y,
     )
     .is_err()
     {
@@ -111,9 +119,14 @@ pub unsafe extern "C" fn process_gerber_to_gcode(
     println!("Finished Store the trace data {} line", state.traces.len());
     println!("Finished Store the pin data {} line", state.pins.len());
 
-    json_exporter::generate_json_preview(&merged_area, &isolation_paths)
+    json_exporter::generate_json_preview(&merged_area, &isolation_paths, mirror_x, mirror_y)
 }
 
+/// Converts a PNG image into raster engraving G-code.
+///
+/// # Safety
+///
+/// `input_path_ptr` and `out_path_ptr` must be valid, non-null, null-terminated UTF-8 strings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn process_engraving_to_gcode(
     input_path_ptr: *const c_char,
@@ -123,25 +136,41 @@ pub unsafe extern "C" fn process_engraving_to_gcode(
     target_width_mm: f64,
     target_height_mm: f64,
     invert_colors: i32,
-) -> i32 { 
-    if input_path_ptr.is_null() || out_path_ptr.is_null() { return -1; }
+) -> i32 {
+    if input_path_ptr.is_null() || out_path_ptr.is_null() {
+        return -1;
+    }
 
     let input_path = match unsafe { CStr::from_ptr(input_path_ptr) }.to_str() {
-        Ok(s) => s, Err(_) => return -2,
+        Ok(s) => s,
+        Err(_) => return -2,
     };
     let out_path = match unsafe { CStr::from_ptr(out_path_ptr) }.to_str() {
-        Ok(s) => s, Err(_) => return -2,
+        Ok(s) => s,
+        Err(_) => return -2,
     };
 
     let mut out_file = match File::create(out_path) {
-        Ok(f) => f, Err(_) => return -4,
+        Ok(f) => f,
+        Err(_) => return -4,
     };
 
     println!("Gtrace Core: Starting Etching Process for {}", input_path);
 
     if input_path.to_lowercase().ends_with(".png") {
         let invert = invert_colors == 1;
-        if process_png_to_gcode(input_path, &mut out_file, feed_rate, laser_power, target_width_mm, target_height_mm, invert).is_err() {
+        if process_png_to_gcode(
+            input_path,
+            &mut out_file,
+            feed_rate,
+            laser_power,
+            target_width_mm,
+            target_height_mm,
+            invert,
+        )
+        .is_err()
+        {
+            return -5;
         }
     } else {
         println!("DXF / Other format parsing is not implemented yet!");
@@ -152,6 +181,12 @@ pub unsafe extern "C" fn process_engraving_to_gcode(
     1
 }
 
+/// Releases a JSON preview string returned by [`process_gerber_to_gcode`].
+///
+/// # Safety
+///
+/// `ptr` must be a pointer previously returned by [`process_gerber_to_gcode`] and must not have
+/// already been freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn free_json_string(ptr: *mut c_char) {
     if !ptr.is_null() {

@@ -19,7 +19,7 @@ namespace Front_End
         public static extern IntPtr process_gerber_to_gcode(
             [MarshalAs(UnmanagedType.LPUTF8Str)] string path_ptr, 
             [MarshalAs(UnmanagedType.LPUTF8Str)] string output_path, 
-            int feed_rate, int laser_power, int mirror_x, double isolation_width_mm);
+            int feed_rate, int laser_power, int mirror_x, int mirror_y, double isolation_width_mm);
 
         [DllImport("core_engine.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern void free_json_string(IntPtr ptr);
@@ -137,10 +137,11 @@ namespace Front_End
                 }
 
                 int mirrorX = chkMirrorX.IsChecked == true ? 1 : 0;
+                int mirrorY = chkMirrorY.IsChecked == true ? 1 : 0;
 
                 LogToConsole("----------------------------------");
                 LogToConsole("Processing Gerber & Fetching Geometry for Preview...");
-                LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Border Width: {isoWidth:0.###} mm, Mirror X: {mirrorX}");
+                LogToConsole($"Settings - Feed Rate: {feedRate} mm/min, Border Width: {isoWidth:0.###} mm, Mirror X: {mirrorX}, Mirror Y: {mirrorY}");
 
                 GenerateButton.IsEnabled = false;
                 GenerateButton.Content = "PROCESSING...";
@@ -155,7 +156,7 @@ namespace Front_End
                         IntPtr jsonPtr = IntPtr.Zero;
                         try
                         {
-                            jsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, isoWidth);
+                            jsonPtr = process_gerber_to_gcode(selectedFilePath, selectedOutputPath, feedRate, laserPower, mirrorX, mirrorY, isoWidth);
 
                             if (jsonPtr != IntPtr.Zero)
                             {

@@ -145,6 +145,9 @@
                                 <CheckBox Name="chkMirrorX"
                                           Content="Mirror X-Axis (Bottom Layer)"
                                           Style="{StaticResource ModernCheckBox}"/>
+                                <CheckBox Name="chkMirrorY"
+                                          Content="Mirror Y-Axis"
+                                          Style="{StaticResource ModernCheckBox}"/>
                         </StackPanel>
 
                         <StackPanel Name="PanelEngraveMode"
