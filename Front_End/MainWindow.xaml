@@ -4,6 +4,8 @@
         Title="GTrace - Gerber to G-Code"
         Height="720"
         Width="1280"
+        MinHeight="600"
+        MinWidth="960"
         Background="#F0F0F0">
 
         <Window.Resources>
@@ -72,12 +74,15 @@
 
         <Grid Margin="15">
                 <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="280"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="320"/>
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Grid.Column="0"
-                            Margin="0,0,15,0">
+                <ScrollViewer Grid.Column="1"
+                              Margin="15,0,0,0"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
                         <TextBlock Text="GTRACE"
                                    FontSize="28"
                                    FontWeight="Black"
@@ -128,6 +133,9 @@
                                            TextWrapping="Wrap"
                                            Margin="0,5,0,15"/>
 
+                                <TextBlock Text="PCB Modification"
+                                           FontWeight="SemiBold"
+                                           Margin="0,0,0,5"/>
                                 <Grid Margin="0,0,0,10">
                                         <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="*"/>
@@ -263,8 +271,9 @@
                                 FontWeight="Bold"
                                 FontSize="14"/>
                 </StackPanel>
+                </ScrollViewer>
 
-                <Grid Grid.Column="1">
+                <Grid Grid.Column="0">
                         <Grid.RowDefinitions>
                                 <RowDefinition Height="*"/>
                                 <RowDefinition Height="160"/>
